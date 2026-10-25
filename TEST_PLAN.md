@@ -41,6 +41,4 @@ Run `03_database_tests.sql` after `01_schema.sql` and `02_views.sql` in `garageg
 | DB33 | F07, F10, F13 | Service deletion cleans links and updates expenses. |
 | DB34 | F03 | Session revocation can be stored. |
 
-## Evidence
 
-Capture the table list and test results on your local PostgreSQL installation. Save console output with the README command. Record database version, test date, tester name, pass/fail result and any failures fixed. The supplied automated results describe the assistant's test environment, not a test already conducted on your PC.
