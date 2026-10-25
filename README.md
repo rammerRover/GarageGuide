@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # GarageGuide
 All your wheels, all in one place. A web application to track maintenance, service history, and spare parts for all your vehicles. Add cars, motorcycles, dirt bikes, or any wheeled ride. ThingsWithWheels helps you manage maintenance schedules, parts, and keep your garage organized. 
 =======
@@ -136,16 +136,3 @@ Upcoming/overdue calculations, dashboard responses and AI report generation stil
 
 Passwords and session tokens must be securely hashed by Python before storage. Schema constraints do not hash values, authenticate callers, enforce every route's ownership, or confirm part accuracy. FastAPI must obtain the owner from the authenticated session and filter private queries; accepting a user ID supplied by the browser is insufficient. Never connect React directly to PostgreSQL.
 
-## 9. Troubleshooting and evidence
-
-- **Connection refused:** confirm the Windows PostgreSQL service is running, and check host/port.
-- **Password authentication failed:** use the PostgreSQL role password, not your pgAdmin master password.
-- **Relation already exists:** the schema was already applied. Use the existing tables or a new empty database; do not delete your work blindly.
-- **Relation does not exist:** check the connected database and run schema before views/tests.
-- **Current transaction is aborted:** run `ROLLBACK;`, then fix the first reported error.
-- **psql not recognized:** use its full path as shown above.
-
-For your Work Log, capture the ten-table list and your 34-PASS test output, and link directly to SQL/test documentation after committing it to GitHub. Record actual work dates and time. This package does not update your tracker or claim eight hours of work.
-
-Official references: [PostgreSQL Windows installation](https://www.postgresql.org/download/windows/), [psql and ON_ERROR_STOP](https://www.postgresql.org/docs/current/app-psql.html), [pgAdmin Query Tool toolbar](https://www.pgadmin.org/docs/pgadmin4/latest/query_tool_toolbar.html).
->>>>>>> 7ce1031 (Database creation and testing)
