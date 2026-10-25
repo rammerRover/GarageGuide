@@ -9,7 +9,6 @@
 | `04_practice_queries.sql` | Optional guided insert/read/update exercise; changes roll back. |
 | `TEST_PLAN.md` | Explains which planned features these tests cover and which need app tests later. |
 | `test-results.json` | Actual automated results from this development environment. |
-If you already applied an earlier schema, do not run this over it or delete useful data. Create a new empty database with a different name, or prepare a migration. `01_schema.sql` intentionally fails on existing tables rather than pretending an older schema is current.
 
 ## 1. Understand the pieces
 
