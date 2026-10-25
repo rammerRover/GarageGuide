@@ -1,8 +1,8 @@
 
 # GarageGuide
 All your wheels, all in one place. A web application to track maintenance, service history, and spare parts for all your vehicles. Add cars, motorcycles, dirt bikes, or any wheeled ride. ThingsWithWheels helps you manage maintenance schedules, parts, and keep your garage organized. 
-=======
-# GarageGuide PostgreSQL setup and learning guide
+
+## PostgreSQL setup and learning guide
 
 This package builds the database for GarageGuide's planned MVP. It contains ten tables, an expense-summary view, 34 executable database tests, and a rollback-only practice script. The project stack remains React, Python/FastAPI and PostgreSQL. No Docker or ORM is required to use these files.
 
@@ -16,6 +16,7 @@ This package builds the database for GarageGuide's planned MVP. It contains ten 
 | `04_practice_queries.sql` | Optional guided insert/read/update exercise; changes roll back. |
 | `TEST_PLAN.md` | Explains which planned features these tests cover and which need app tests later. |
 | `test-results.json` | Actual automated results from this development environment. |
+| `VERIFICATION.md` | Test environment, results and limitations. |
 
 If you already applied an earlier schema, do not run this over it or delete useful data. Create a new empty database with a different name, or prepare a migration. `01_schema.sql` intentionally fails on existing tables rather than pretending an older schema is current.
 
@@ -129,6 +130,21 @@ Read the comments as you run it. Do not replace ROLLBACK with COMMIT unless you 
 | `maintenance_schedules`, `maintenance_completions` | Recurrence intervals/baselines and links to completed services. |
 | `parts`, `part_fitments`, `saved_parts` | Limited sourced catalog, documented fitment and personal references. |
 
+The expense view totals each service once, includes vehicles with no services, and counts unknown costs separately. Its total is recorded maintenance/repair spending, not full ownership cost (fuel, insurance and depreciation are not modeled).
 
+Upcoming/overdue calculations, dashboard responses and AI report generation still need Python/FastAPI code. The database stores their inputs. For future reminders, days/miles/hours and combined intervals are supported; reminder thresholds and completion-baseline selection need application tests. See TEST_PLAN.md.
 
+Passwords and session tokens must be securely hashed by Python before storage. Schema constraints do not hash values, authenticate callers, enforce every route's ownership, or confirm part accuracy. FastAPI must obtain the owner from the authenticated session and filter private queries; accepting a user ID supplied by the browser is insufficient. Never connect React directly to PostgreSQL.
 
+## 9. Troubleshooting and evidence
+
+- **Connection refused:** confirm the Windows PostgreSQL service is running, and check host/port.
+- **Password authentication failed:** use the PostgreSQL role password, not your pgAdmin master password.
+- **Relation already exists:** the schema was already applied. Use the existing tables or a new empty database; do not delete your work blindly.
+- **Relation does not exist:** check the connected database and run schema before views/tests.
+- **Current transaction is aborted:** run `ROLLBACK;`, then fix the first reported error.
+- **psql not recognized:** use its full path as shown above.
+
+For your Work Log, capture the ten-table list and your 34-PASS test output, and link directly to SQL/test documentation after committing it to GitHub. Record actual work dates and time. This package does not update your tracker or claim eight hours of work.
+
+Official references: [PostgreSQL Windows installation](https://www.postgresql.org/download/windows/), [psql and ON_ERROR_STOP](https://www.postgresql.org/docs/current/app-psql.html), [pgAdmin Query Tool toolbar](https://www.pgadmin.org/docs/pgadmin4/latest/query_tool_toolbar.html).
