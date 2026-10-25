@@ -112,4 +112,3 @@ SELECT pg_temp.gg_assert('DB34', 'F03', 'Session revocation can be stored', ((SE
 SELECT * FROM gg_test_results ORDER BY test_id;
 SELECT COUNT(*) AS passed_tests, 'All tests passed; fixtures rolled back below' AS summary FROM gg_test_results;
 ROLLBACK;
-

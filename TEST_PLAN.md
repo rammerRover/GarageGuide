@@ -59,4 +59,3 @@ Do not mark those workbook test cases passed solely because this database suite 
 ## Evidence
 
 Capture the table list and test results on your local PostgreSQL installation. Save console output with the README command. Record database version, test date, tester name, pass/fail result and any failures fixed. The supplied automated results describe the assistant's test environment, not a test already conducted on your PC.
-

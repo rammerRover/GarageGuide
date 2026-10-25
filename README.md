@@ -1,4 +1,7 @@
-# GarageGuide PostgreSQL setup and learning guide
+# GarageGuide
+All your wheels, all in one place. A web application to track maintenance, service history, and spare parts for all your vehicles. Add cars, motorcycles, dirt bikes, or any wheeled ride. ThingsWithWheels helps you manage maintenance schedules, parts, and keep your garage organized.
+
+## PostgreSQL setup and learning guide
 
 This package builds the database for GarageGuide's planned MVP. It contains ten tables, an expense-summary view, 34 executable database tests, and a rollback-only practice script. The project stack remains React, Python/FastAPI and PostgreSQL. No Docker or ORM is required to use these files.
 
