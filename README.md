@@ -130,9 +130,6 @@ Read the comments as you run it. Do not replace ROLLBACK with COMMIT unless you 
 | `maintenance_schedules`, `maintenance_completions` | Recurrence intervals/baselines and links to completed services. |
 | `parts`, `part_fitments`, `saved_parts` | Limited sourced catalog, documented fitment and personal references. |
 
-The expense view totals each service once, includes vehicles with no services, and counts unknown costs separately. Its total is recorded maintenance/repair spending, not full ownership cost (fuel, insurance and depreciation are not modeled).
 
-Upcoming/overdue calculations, dashboard responses and AI report generation still need Python/FastAPI code. The database stores their inputs. For future reminders, days/miles/hours and combined intervals are supported; reminder thresholds and completion-baseline selection need application tests. See TEST_PLAN.md.
 
-Passwords and session tokens must be securely hashed by Python before storage. Schema constraints do not hash values, authenticate callers, enforce every route's ownership, or confirm part accuracy. FastAPI must obtain the owner from the authenticated session and filter private queries; accepting a user ID supplied by the browser is insufficient. Never connect React directly to PostgreSQL.
 
