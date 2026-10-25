@@ -1,7 +1,5 @@
--- GarageGuide database tests. Run on garageguide_test after 01 and 02.
--- Execute the WHOLE file. Failures raise an exception; successes appear below.
--- Fixtures and temporary helpers roll back. Generated identity sequences can
--- advance even on rollback, so use a separate test database.
+-- database tests. 
+
 BEGIN;
 SET LOCAL search_path = public, pg_temp;
 CREATE TEMP TABLE gg_test_results (test_id text, feature_id text, test_name text, result text);
