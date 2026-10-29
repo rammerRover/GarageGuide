@@ -5,6 +5,7 @@ __pycache__/
 *.py[cod]
 .env
 .env.test
+.env.*
 !.env.example
 !.env.test.example
 node_modules/
@@ -14,3 +15,7 @@ credentials.json
 id_rsa
 private.pem
 **/.aws/credentials
+
+# Local operating-system files
+.DS_Store
+Thumbs.db
