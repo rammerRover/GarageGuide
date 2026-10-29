@@ -1,0 +1,16 @@
+.venv/
+.tools/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env
+.env.test
+!.env.example
+!.env.test.example
+node_modules/
+dist/
+*.log
+credentials.json
+id_rsa
+private.pem
+**/.aws/credentials

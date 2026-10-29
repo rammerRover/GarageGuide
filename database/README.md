@@ -1,3 +1,19 @@
+# GarageGuide database setup
+
+Use `garageguide_app` for development and `garageguide_app_test` for application
+tests and SQL practice, as described in the [project setup](../README.md).
+Inherited names `garageguide` and `garageguide_test` in SQL comments and
+historical documents refer to the original SQL package, not the current
+application databases. The current setup instructions below use only
+`garageguide_app` and `garageguide_app_test`. Run fixture-based SQL tests and
+practice only on `garageguide_app_test`, never on `garageguide_app` or `postgres`.
+Historical evidence lives in [docs/verification](../docs/verification/).
+
+The root README's database commands run from the repository root and use
+`database/<filename>.sql` paths. The PowerShell commands in section 6 below
+explicitly enter the repository's `database/` directory and use
+`.\<filename>.sql` paths. SQL entered in pgAdmin Query Tool has no shell working
+directory; select the intended database connection before running it.
 
 ## Files and order
 
@@ -7,8 +23,8 @@
 | `02_views.sql` | Run after the schema to create the live expense-summary query. It can be rerun. |
 | `03_database_tests.sql` | Run on the test database. Expect 34 PASS results. |
 | `04_practice_queries.sql` | Optional guided insert/read/update exercise; changes roll back. |
-| `TEST_PLAN.md` | Explains which planned features these tests cover and which need app tests later. |
-| `test-results.json` | Actual automated results from this development environment. |
+| [`TEST_PLAN.md`](../docs/verification/TEST_PLAN.md) | Explains which planned features these tests cover and which need app tests later. |
+| [`test-results.json`](../docs/verification/test-results.json) | Historical automated results from the original development environment. |
 
 ## 1. Understand the pieces
 
@@ -31,31 +47,34 @@ If PostgreSQL is already installed and running, keep it and skip installation.
 
 In pgAdmin, right-click **Databases → Create → Database**. Create:
 
-- `garageguide`: future development/app data.
-- `garageguide_test`: disposable testing and SQL practice.
+- `garageguide_app`: development/app data.
+- `garageguide_app_test`: application testing and SQL practice.
+
+If these databases already exist, reuse them. Apply the schema only to fresh,
+uninitialized databases; do not recreate databases or reapply it to existing tables.
 
 For your initial local setup you may use `postgres` as owner. Before wiring up the deployed FastAPI app, create a dedicated restricted application role instead of using the administrator account. The app's `users` table stores GarageGuide accounts; those are different from PostgreSQL login roles.
 
 ## 4. Build the tables in each database
 
-For `garageguide`:
+For `garageguide_app`:
 
 1. Right-click the database and open **Query Tool**.
-2. Confirm the connection is to `garageguide`, not the default `postgres` database.
-3. Use **Open File** to load `01_schema.sql`.
+2. Confirm the connection is to `garageguide_app`, not the default `postgres` database.
+3. Use **Open File** to load `database/01_schema.sql` from the repository.
 4. Clear any text selection and use **Execute script** to run the whole file. Look for successful completion and no ERROR in Messages.
-5. Open `02_views.sql` in the same connected Query Tool and execute the whole file.
+5. Open `database/02_views.sql` from the repository in the same connected Query Tool and execute the whole file.
 6. Refresh **Schemas → public → Tables**. There should be ten tables; **Views** should contain `vehicle_expense_summary`.
 
-Repeat the same steps for `garageguide_test` in a Query Tool connected to that database.
+Repeat the same steps for a fresh `garageguide_app_test` in a Query Tool connected to that database. Skip schema setup for databases that are already initialized.
 
-To verify which database you are using, execute:
+In pgAdmin Query Tool connected to `garageguide_app` or `garageguide_app_test`, verify the selected database with this read-only query (no shell working directory applies):
 
 ```sql
 SELECT current_database(), current_user, version();
 ```
 
-To list the application tables:
+In the same pgAdmin Query Tool connection, list the application tables (no shell working directory applies):
 
 ```sql
 SELECT table_name
@@ -66,8 +85,8 @@ ORDER BY table_name;
 
 ## 5. Run the tests in pgAdmin
 
-1. Open Query Tool on **garageguide_test**.
-2. Load `03_database_tests.sql` and execute the whole script, with no partial selection.
+1. Open Query Tool on **garageguide_app_test**.
+2. Load `database/03_database_tests.sql` from the repository and execute the whole script, with no partial selection.
 3. Look through Data Output/result sets for the table containing `test_id`, `feature_id`, `test_name`, and `result`. There should be **34 rows marked PASS**, followed by a summary with `passed_tests = 34`.
 4. Messages should contain no unhandled ERROR. The final `ROLLBACK` is intentional: it cleans up fixtures, not a failed test.
 5. Run the entire file again to confirm it is repeatable.
@@ -82,13 +101,16 @@ The fixture names and parts are synthetic. They do not represent verified real-w
 
 ## 6. Run from Windows PowerShell instead (optional)
 
-Open PowerShell in the extracted package folder. Set the path to your installed version (change `18` if needed):
+Start PowerShell in the repository root. This block first changes into the
+repository's `database/` directory; all subsequent commands in the block run
+there. Set the path to your installed PostgreSQL version (change `18` if needed):
 
 ```powershell
+Set-Location database
 $pgBin = 'C:\Program Files\PostgreSQL\18\bin'
-& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_test -v ON_ERROR_STOP=1 -f .\01_schema.sql
-& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_test -v ON_ERROR_STOP=1 -f .\02_views.sql
-& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_test -v ON_ERROR_STOP=1 -f .\03_database_tests.sql
+& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_app_test -v ON_ERROR_STOP=1 -f .\01_schema.sql
+& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_app_test -v ON_ERROR_STOP=1 -f .\02_views.sql
+& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_app_test -v ON_ERROR_STOP=1 -f .\03_database_tests.sql
 $LASTEXITCODE
 ```
 
@@ -96,17 +118,17 @@ Run the first two commands only if you have not already built that database in p
 
 `ON_ERROR_STOP=1` tells psql to stop when a statement fails. An exit code of `0` after the test command means it finished successfully; a nonzero value means investigate the error. The test output must also show all 34 PASS rows and the 34-test summary.
 
-To capture evidence:
+From the repository's `database/` directory, in the same PowerShell session with `$pgBin` set, capture test evidence:
 
 ```powershell
-& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_test -v ON_ERROR_STOP=1 -f .\03_database_tests.sql *> .\local-test-output.txt
+& "$pgBin\psql.exe" -h localhost -U postgres -d garageguide_app_test -v ON_ERROR_STOP=1 -f .\03_database_tests.sql *> .\local-test-output.txt
 $LASTEXITCODE
 Get-Content .\local-test-output.txt
 ```
 
 ## 7. Practice reading and changing data
 
-Run `04_practice_queries.sql` on `garageguide_test`. It creates a fake account, a sample Discovery and an oil-change record, reads them with JOIN, shows expenses, updates current mileage, and demonstrates that historical mileage remains unchanged. It ends with ROLLBACK, so the sample rows disappear.
+In pgAdmin Query Tool connected to `garageguide_app_test`, open `database/04_practice_queries.sql` from the repository and execute the whole file. It creates a fake account, a sample Discovery and an oil-change record, reads them with JOIN, shows expenses, updates current mileage, and demonstrates that historical mileage remains unchanged. It ends with ROLLBACK, so the sample rows disappear.
 
 Read the comments as you run it. Do not replace ROLLBACK with COMMIT unless you intentionally want to retain the examples. Avoid editing password fields or using example hashes for real authentication.
 
@@ -114,13 +136,13 @@ Read the comments as you run it. Do not replace ROLLBACK with COMMIT unless you 
 
 | Tables | Role |
 |---|---|
-| `users`, `user_sessions` | Account storagewnd revocable/expiring session storage. |
-| `vehicles` | Each user's cars, dirt bikes wd other vehicles, with current miles/hours. |
-| `service_records`, `service_parts` | Serviw details, costs and independent historical replacement-part snapshots. |
-| `maintenance_schedules`, `maintenance_compwtions` | Recurrence intervals/baselines and links to completed services. |
-| `parts`, `part_fitments`, `saved_parts` | wmited sourced catalog, documented fitment and personal references. |
+| `users`, `user_sessions` | Account storage and revocable/expiring session storage. |
+| `vehicles` | Each user's cars, dirt bikes and other vehicles, with current miles/hours. |
+| `service_records`, `service_parts` | Service details, costs and independent historical replacement-part snapshots. |
+| `maintenance_schedules`, `maintenance_completions` | Recurrence intervals/baselines and links to completed services. |
+| `parts`, `part_fitments`, `saved_parts` | Limited sourced catalog, documented fitment and personal references. |
 
-The expense view totals each service once, iwludes vehicles with no services, and counts unknown costs separately. Its total is recorded maintenance/repair spending, not fuw ownership cost (fuel, insurance and depreciation are not modeled).
+The expense view totals each service once, includes vehicles with no services, and counts unknown costs separately. Its total is recorded maintenance/repair spending, not full ownership cost (fuel, insurance and depreciation are not modeled).
 
 Upcoming/overdue calculations, dashboard responses and AI report generation still need Python/FastAPI code. The database stores their inputs. For future reminders, days/miles/hours and combined intervals are supported; reminder thresholds and completion-baseline selection need application tests. See TEST_PLAN.md.
 
