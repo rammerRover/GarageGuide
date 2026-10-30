@@ -15,6 +15,7 @@ credentials.json
 id_rsa
 private.pem
 **/.aws/credentials
+extra/
 
 # Local operating-system files
 .DS_Store
