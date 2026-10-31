@@ -1,5 +1,5 @@
 # GarageGuide
-Project backbone: React (Vite and JavaScript) → FastAPI (Python 3.13) → PostgreSQL (psycopg). The only screen checks connectivity. Product features are deferred.
+Application stack: React (Vite and JavaScript) → FastAPI (Python 3.13) → PostgreSQL (psycopg). The current screen checks connectivity. Product features are deferred.
 
 ## Structure
 
@@ -34,7 +34,7 @@ psql -h localhost -U YOUR_LOCAL_ROLE -d garageguide_app_test -v ON_ERROR_STOP=1 
 psql -h localhost -U YOUR_LOCAL_ROLE -d garageguide_app_test -v ON_ERROR_STOP=1 -f database/02_views.sql
 ```
 
-Passwords are prompted when needed. See [database instructions](database/README.md) for pgAdmin and full psql paths. Inherited `garageguide`/`garageguide_test` references in SQL comments and historical evidence describe the original SQL package; use the application database names above for this backbone.
+Passwords are prompted when needed. See [database instructions](database/README.md) for pgAdmin and full psql paths. Inherited `garageguide`/`garageguide_test` references in SQL comments and historical evidence describe the original SQL package; use the application database names above for this application.
 
 ## Backend
 

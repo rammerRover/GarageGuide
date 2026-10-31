@@ -1,8 +1,8 @@
-# Backbone verification status
+# Project scaffold verification status
 
 Implementation checks performed October 28, 2026. This file describes the
-backbone only; the original `VERIFICATION.md` and `test-results.json` retain
-their original provenance.
+project scaffold only; the original `VERIFICATION.md` and
+`test-results.json` retain their original provenance.
 
 | Check | Result |
 | --- | --- |

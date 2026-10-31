@@ -9,7 +9,7 @@ GarageGuide is a vehicle maintenance and parts assistant that helps owners and
 at-home mechanics organize service records, plan upcoming maintenance, track
 expenses, and save replacement-part information.
 
-The current application is a technical backbone with a connectivity screen,
+The current application is a project scaffold with a connectivity screen,
 health checks, and a PostgreSQL schema. The features below describe the
 intended minimum viable product (MVP), not functionality that is already
 complete.
