@@ -1,9 +1,8 @@
 # GarageGuide - Project Overview
 
-<!-- blueprint:source-hash b98fa8086c6c38cfa6cd934b2adc822d4173eb65b820a4ec076e54bf340e0fee -->
+<!-- blueprint:source-hash 5bf34eadc710fd1ae902c2cada1ed89a158eeb262fce47f50d588e6e6194ec10 -->
 
-> Maintenance records, recurring work, parts, and recorded service costs for a
-> personal garage of vehicles using miles, operating hours, or both.
+> Know Your Vehicle's History. Plan Its Future.
 
 Generated from `blueprint/project-plan.md` and `blueprint/build-plan.md`.
 Change those plans and rerun `/overview` when product decisions change. The
@@ -13,13 +12,16 @@ existing SQL in `database/` is authoritative for schema fields and constraints.
 
 Vehicle owners otherwise rely on scattered records or memory to track service,
 parts, costs, and recurring maintenance. GarageGuide keeps that information
-together per vehicle, preserves historical readings, and distinguishes unknown
-values from real zeroes.
+together per vehicle, preserves historical readings and part details, and
+distinguishes unknown values from real zeroes. Grounded AI-assisted reports
+help explain recorded information without diagnosing mechanical problems or
+determining part compatibility.
 
 ## Users
 
-- Individuals maintaining one or more personal cars, motorcycles, dirt bikes,
-  or other wheeled vehicles.
+- Individual owners, families, and at-home mechanics maintaining cars,
+  motorcycles, dirt bikes, ATVs, RZRs, or similar recreational vehicles using
+  mileage, operating hours, or both. Shared household accounts are outside the MVP.
 - Each account can access only its own vehicles and associated records.
 - Repair shops, fleet operators, organizations, shared garages, and team roles
   are outside the MVP.
@@ -28,36 +30,48 @@ values from real zeroes.
 
 - Private owner-scoped data requires authentication and ownership checks in
   FastAPI. SQL relationships alone do not authorize requests.
-- Hash passwords and session tokens. Sessions require secure cookies, expiry,
-  revocation, and CSRF protection. Never persist plaintext passwords or raw
-  session tokens.
+- Hash passwords and session tokens. Sessions require secure cookies in
+  production, expiry, revocation, and CSRF protection. Never persist plaintext
+  passwords or raw session tokens.
 - Use parameterized SQL. Health checks remain read-only and expose neither
   product records nor credentials or sensitive database errors.
-- User count, traffic, availability targets, and production internet exposure
-  are undecided. Do not infer scale or compliance requirements.
-- Exclude monetization, account deletion, external catalog synchronization,
-  email/push notifications, AI reports, and shop/fleet workflows unless a
-  separate product decision changes the plans.
+- The browser-based MVP will initially be free to people the developer knows.
+  Traffic and availability targets are unspecified; do not infer scale or
+  compliance requirements. Deployed connections must be encrypted.
+- AI requests use only necessary verified records for the selected vehicle.
+  Never send passwords, session tokens, complete account information, unrelated
+  vehicles, or another owner's records. Never sell user or vehicle data.
+- Exclude VIN decoding, owner's-manual scanning/extraction, complete parts
+  compatibility coverage, automatic catalog synchronization, receipt/document scanning,
+  external notifications, shared garages, shop/fleet workflows, and payments.
+  Additional scope or paid services require review against the course timeline.
 
 ## Features
 
 **Existing foundation:** the responsive connection-status screen, FastAPI
 health endpoints, and PostgreSQL schema/view scripts. These are pre-build
-foundation, not completed product features. All ten items below remain planned.
+foundation, not completed product features. Historical SQL verification is
+separate from native application connectivity and browser verification, which
+remain pending in the scaffold evidence. All fifteen items below remain planned.
 
 The main workflow is owner-scoped vehicle maintenance: select a vehicle, record
 service, and understand recurring work. Preserve this build-plan order and IDs:
 
-1. **Accounts and sessions** - registration, sign-in, sign-out, and secure private sessions.
-2. **Vehicles** - manage vehicles and current mileage and/or operating hours.
-3. **Service history** - record and review dated service history per vehicle.
-4. **Recurring maintenance** - define schedules and calculate upcoming, due, and overdue work.
-5. **Maintenance completion** - link a service record to one or more schedules.
-6. **Catalog search and fitment** - search curated parts and show only verified vehicle fitments.
-7. **Saved vehicle parts** - save catalog references or manual part entries.
-8. **Service part history** - preserve identifying details of parts used during a service.
-9. **Service expenses** - summarize known costs per vehicle and distinguish unknown costs.
-10. **Garage dashboard** - show vehicle readings, service history, maintenance status, and calculated in-app reminders.
+1. **Register a user account** - validate email/password input, prevent duplicates, hash passwords, and show safe success/error results.
+2. **Sign in, sign out, and protect private sessions** - verify credentials, enforce expiry/revocation, protect private routes, and prove owner isolation.
+3. **Create and list vehicles in a digital garage** - manually add vehicle details and miles/hours, then list only the authenticated owner's vehicles.
+4. **View and update a vehicle profile** - correct vehicle details and current readings while preserving historical service readings.
+5. **Record and review service history** - create, list, edit, and remove owned service records with dates, readings, costs, descriptions, and notes.
+6. **Record parts used during a service** - preserve catalog-backed or manual part snapshots independently of later catalog or saved-part changes.
+7. **Create and update maintenance schedules** - validate positive day/mile/hour intervals and matching baselines, with source notes and duplicate-task review.
+8. **Calculate maintenance status and in-app reminders** - calculate upcoming/due/overdue work using the first reached limit and identify missing or stale inputs.
+9. **Complete scheduled maintenance** - record or link service to schedules atomically, prevent duplicate links, and calculate the next occurrence without duplicate expenses.
+10. **Search the limited parts catalog** - search names, categories, or part numbers and show sourced, verified fitment information without claiming uncertain compatibility.
+11. **Save parts to a vehicle** - save, edit, and remove catalog or manual references, prevent duplicates, and preserve service-part history.
+12. **Review vehicle expenses** - summarize known service costs, identify unknown costs, link contributing records, and reflect service changes.
+13. **Generate an AI-assisted vehicle report** - summarize selected verified records through an approved provider, label output, explain missing data, link sources, and handle provider failures.
+14. **Build the responsive garage dashboard and navigation** - connect completed features and show vehicles, services, maintenance, reminders, and costs with clear loading/empty/failure states.
+15. **Deploy and verify the complete MVP** - deploy React, FastAPI, and PostgreSQL with private configuration; verify persistence, HTTPS, sessions, owner isolation, responsive use, and recovery.
 
 ## Data model
 
@@ -104,6 +118,13 @@ service completions, dates, and available current readings. Missing miles/hours
 remain unknown. Do not add stored notification/status records merely to support
 the planned dashboard.
 
+### AI report inputs
+
+Feature 13 uses the selected vehicle's verified service, expense, and maintenance
+data. Reports are labeled summaries with source links and explicit missing-data
+information, not substitutes for stored records. The plans do not specify
+persisting generated reports or adding a reports table.
+
 ## Tech stack
 
 - **Frontend:** React 19, Vite, JavaScript/JSX, and the existing plain CSS.
@@ -111,9 +132,14 @@ the planned dashboard.
 - **Backend:** Python 3.13 and FastAPI; keep application creation separate from
   route handlers. Use the existing `backend/.venv` runtime.
 - **Database:** PostgreSQL with direct psycopg access and parameterized SQL.
-  Hand-managed SQL is authoritative; there is no ORM or automatic schema setup.
+  Hand-managed SQL is authoritative. No Django, ORM, migration framework, or
+  automatic schema creation without an approved architectural change.
 - **API boundary:** React calls relative `/api` URLs. Only FastAPI receives
   PostgreSQL credentials and accesses private data.
+- **AI integration:** an approved external AI API receives only the necessary
+  selected records through FastAPI. Provider credentials stay private.
+- **Vehicle data:** manual entry is required. An optional vehicle-data API may
+  be evaluated, but the MVP cannot depend on a paid vehicle-data service.
 - **Verification:** backend pytest, frontend ESLint and production build, plus
   direct browser evidence where applicable. Exact commands and the test gate
   are in `AGENTS.md`; no frontend unit-test runner or combined Verify/CI command
@@ -121,14 +147,17 @@ the planned dashboard.
 
 ## Monetization
 
-Outside the initial MVP. No subscriptions, advertising, or payments are planned
-without a separate product decision.
+The course MVP is free and contains no payments, subscriptions, or advertising.
+Possible post-course funding models include subscriptions/freemium and verified
+retailer affiliate links, subject to a separate product decision. User and
+vehicle data will not be sold.
 
 ## UI/UX
 
 - Practical, clear, vehicle-centered, and responsive on desktop and mobile.
-- Main planned flows: vehicle selection/readings, service timeline, maintenance
-  status and completion, catalog search, saved parts, and expenses/dashboard.
+- Main planned flows: registration and sign-in, vehicle selection/readings,
+  service timeline and part history, maintenance status/completion, catalog
+  search, saved parts, expenses, AI-assisted reports, and garage dashboard.
 - Distinguish unknown readings/costs from zero. Explain the interval that causes
   maintenance to be due and avoid presenting incomplete fitments as compatible.
 - Preserve accessible keyboard controls, readable status messages, and visible
@@ -137,6 +166,11 @@ without a separate product decision.
   by the plans; choose them in feature specs rather than assuming routes exist.
 
 ## Deployment
+
+Feature 15 delivers a browser-based deployment. Vercel is the tentative frontend
+host, with a compatible FastAPI host and managed PostgreSQL provider selected for
+project compatibility and available free or educational hosting. Final providers
+and deployment details remain undecided.
 
 Current operation is local development, with separate `garageguide_app` and
 `garageguide_app_test` databases. Development database verification remains
@@ -149,16 +183,22 @@ deferred; this overview does not initialize or verify any database.
 | Backend dev | From root: `backend/.venv/Scripts/python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000`. |
 | Database provisioning | Separate PostgreSQL service and manually applied SQL from `database/`; never create schema during application startup. |
 | Private backend environment | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`; keep values out of frontend bundles and source control. |
+| AI provider configuration | Provider and variable names remain undecided; AI credentials belong only in private backend configuration. |
 | Health endpoints | `/api/health` for liveness without PostgreSQL; `/api/health/db` for connectivity and expected table/view presence. |
 | Background work | No workers or cron required by this plan; reminders are calculated in the app. |
 
-> TODO: Select production hosting, public domain, release process, provider
-> environment configuration, and deployment-specific commands.
+Deployment acceptance includes the complete user journey, persisted records,
+HTTPS, rejected missing/expired/revoked sessions, wrong-owner rejection,
+responsive interaction, and failure recovery.
+
+> TODO: Finalize production providers, public domain, frontend-to-API routing,
+> release process, environment configuration, and deployment-specific commands.
 
 ## Open questions
 
-The two plans agree on scope and build order. Resolve decisions in the plans or
-the relevant approved feature spec; do not silently turn TODOs into requirements.
+The two plans agree on MVP scope; the Build Plan supplies the fifteen-feature
+implementation order. Resolve decisions in the plans or the relevant approved
+feature spec; do not silently turn TODOs into requirements.
 
 - **Catalog curation:** decide how verified seed data is entered and maintained
   before catalog search can return useful real fitments. No admin UI or external
@@ -168,5 +208,12 @@ the relevant approved feature spec; do not silently turn TODOs into requirements
   recurring-maintenance and completion specs.
 - **Product navigation:** concrete screen routes and detailed product layouts
   are not yet specified. Static prototypes remain optional before UI features.
-- **Deployment and usage:** hosting, release details, traffic, availability
-  targets, and internet exposure remain undecided.
+- **AI provider:** select the approved provider, cost limits, configuration, and
+  failure behavior for Feature 13. Keep data selection and access owner-scoped.
+- **Deployment and usage:** final hosting, release details, traffic, and
+  availability targets remain undecided.
+- **Verification wording:** the Build Plan calls database verification completed,
+  while `docs/verification/PROJECT_SCAFFOLD_STATUS.md` marks native PostgreSQL
+  integration and browser checks pending. Historical PGlite assertions do not
+  establish current native application connectivity; clarify this in the source
+  plan when it is next reviewed.
