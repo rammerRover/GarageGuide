@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Link, Route, Routes } from 'react-router-dom'
 import { checkConnection } from './api.js'
+import Register from './Register.jsx'
 
 const messages = {
   idle: 'Ready to check the connection.',
@@ -8,7 +10,7 @@ const messages = {
   unavailable: 'Connection unavailable. Please try again.',
 }
 
-export default function App() {
+function ConnectionScreen() {
   const [status, setStatus] = useState('idle')
 
   async function handleCheck() {
@@ -22,9 +24,7 @@ export default function App() {
   }
 
   return (
-    <div className="shell">
-      <header><a className="brand" href="/">GarageGuide</a></header>
-      <main>
+    <>
         <section className="intro" aria-labelledby="page-title">
           <p className="eyebrow">Getting started</p>
           <h1 id="page-title">Your garage starts here.</h1>
@@ -41,6 +41,25 @@ export default function App() {
             {status === 'checking' ? 'Checking…' : status === 'unavailable' ? 'Try again' : 'Check connection'}
           </button>
         </section>
+    </>
+  )
+}
+
+export default function App() {
+  return (
+    <div className="shell">
+      <header className="site-header">
+        <Link className="brand" to="/">GarageGuide</Link>
+        <nav className="site-nav" aria-label="Main navigation">
+          <Link to="/">Connection check</Link>
+          <Link to="/register">Create account</Link>
+        </nav>
+      </header>
+      <main>
+        <Routes>
+          <Route path="/" element={<ConnectionScreen />} />
+          <Route path="/register" element={<Register />} />
+        </Routes>
       </main>
       <footer>GarageGuide · Project foundation</footer>
     </div>

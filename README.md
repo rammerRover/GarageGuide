@@ -1,16 +1,16 @@
 # GarageGuide
-Application stack: React (Vite and JavaScript) → FastAPI (Python 3.13) → PostgreSQL (psycopg). The current screen checks connectivity. Product features are deferred.
+Application stack: React (Vite and JavaScript) → FastAPI (Python 3.13) → PostgreSQL (psycopg). The connection screen is at `/`; account registration is at `/register`. The registration API and UI are implemented, with user-reported browser verification recorded November 4, 2026. Final independent review remains outstanding. Other product features remain planned.
 
 ## Structure
 
 | Directory | Purpose |
 | --- | --- |
 | `frontend/` | Vite configuration, npm scripts and dependency lockfile. |
-| `frontend/src/` | React entry point, responsive shell, API helper and CSS. |
+| `frontend/src/` | React Router entry point, connection and registration pages, API helpers and responsive CSS. |
 | `backend/` | Requirements, example environments and pytest tool configuration. Dependencies are declared only in requirements files. |
-| `backend/app/` | App creation in `main.py`, settings in `config.py`, read-only psycopg checks in `database.py`. |
-| `backend/app/routes/` | Health endpoints only. |
-| `backend/tests/` | Health behavior, test database safeguards and opt-in native PostgreSQL check. |
+| `backend/app/` | App creation, private settings, credential validation/hashing, and direct psycopg queries with explicit transaction boundaries. |
+| `backend/app/routes/` | Health endpoints and account registration with sanitized errors. |
+| `backend/tests/` | Database-free health/registration tests, guarded opt-in native transaction/API checks, and a synthetic-account-only manual browser backend launcher. |
 | `database/` | Existing authoritative SQL and database instructions. |
 | `docs/verification/` | Historical database evidence and current manual verification instructions. |
 
@@ -60,7 +60,22 @@ backend/.venv/Scripts/python.exe -m uvicorn app.main:app --app-dir backend --rel
 - `/api/health`: API liveness without PostgreSQL.
 - `/api/health/db`: `SELECT 1` plus expected public table/view presence. This checks availability, not full schema-definition equivalence.
 
-Checks use read-only transactions and bounded connection/query waits. They never apply SQL or read product records. Failures return HTTP 503 with generic messages.
+Health checks use read-only transactions and bounded connection/query waits.
+They never apply schema scripts or read product records. Failures return HTTP
+503 with generic messages.
+
+`POST /api/auth/register` accepts JSON fields `email`, `password`, and
+`password_confirmation`. It trims and validates email before lowercasing the
+normalized identifier. Passwords must match after NFC normalization and contain
+15-128 Unicode code points, preserving case and spaces. Only an Argon2 hash is
+stored. After commit, HTTP 201 returns exactly `id`, `email`, and `created_at`.
+Registration creates no session, cookie, or token. The frontend page uses the
+same relative API endpoint and remains on `/register` after success.
+
+Registration failures use sanitized HTTP 422 field errors, the documented 409
+duplicate-email message, generic 503 database-unavailable errors, or a generic
+500 for unexpected failures. Raw validation input, request bodies, credentials,
+hashes, SQL, and driver details are excluded from responses and application logs.
 
 ## Frontend
 
@@ -73,6 +88,19 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api` to FastAPI at `127.0.0.1:8000`. React receives no database credentials. Servers bind to loopback; use browser device emulation for responsive checks.
+
+React Router keeps the connection screen at `/` and the registration page at
+`/register`; header links navigate without a document reload. Registration uses
+a single POST with a 10-second timeout and no automatic retry. Correctable
+validation or network failures retain passwords only in temporary component
+state. Success, other failures, and leaving the page clear them. No sign-in,
+session, protected route, or browser storage is added.
+
+For browser tests that create accounts, replace the ordinary backend command
+with the guarded test-only launcher in [the browser guide](docs/verification/BROWSER_CHECKS.md).
+It loads only test settings, enforces the connection guard, accepts only its
+reserved synthetic emails, and verifies exact cleanup on normal shutdown. Do
+not use the ordinary development backend for registration verification.
 
 ```powershell
 npm run lint
@@ -95,7 +123,36 @@ Remove-Item Env:RUN_DB_TESTS
 
 The first command requires no running database. The full run needs initialized `garageguide_app_test` and private test credentials. Without `RUN_DB_TESTS=1`, the native PostgreSQL test explicitly skips; with it enabled, connection errors fail the test.
 
-Application tests reject every database name except `garageguide_app_test` before connecting. They never reset databases, insert fixtures, delete rows, or load development credentials. Their database check is read-only.
+Application tests reject every database name except `garageguide_app_test`
+before connecting and never load development credentials. Existing health
+integration checks are read-only. Opt-in feature integration tests may write
+unique synthetic fixtures only in `garageguide_app_test`: immediately after
+opening each writable test connection, run `SELECT current_database()` once as
+its first statement and verify the exact name before allowing writes. This
+includes fixture, API-handler, and cleanup connections; new physical connections
+need a new check, while later statements on the same connection do not;
+register cleanup before writing; remove only records created by that test in
+finalizers and verify removal. Never reset databases, truncate tables, or write
+to `garageguide_app` or `postgres`. A guard or cleanup failure stops database
+testing. Tests must not initialize missing schema or recreate databases. See
+[the test policy](blueprint/context/coding-standards.md#testing) for the complete
+boundary. Native fixtures verify the existing users schema before writes and
+never provision it. Step 2 tests exercise direct queries and transactions.
+With `RUN_DB_TESTS=1`, run these checks from
+the repository root and stop on the first failure:
+
+```powershell
+backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests/test_user_queries_integration.py -m integration -p no:cacheprovider --maxfail=1
+```
+
+Step 3's guarded HTTP registration checks use the same opt-in and cleanup rules:
+
+```powershell
+backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests/test_registration_integration.py -m integration -p no:cacheprovider --maxfail=1
+```
+
+Observed registration/query test results are recorded in
+[registration verification](docs/verification/REGISTRATION_STATUS.md).
 
 From the repository root, run the existing SQL assertions separately against `garageguide_app_test` only:
 
@@ -105,4 +162,4 @@ psql -h localhost -U YOUR_LOCAL_ROLE -d garageguide_app_test -v ON_ERROR_STOP=1 
 
 The SQL suite creates transactional fixtures and rolls them back; identity counters can advance. Never run it or the optional practice script on `garageguide_app`.
 
-Follow [manual browser checks](docs/verification/BROWSER_CHECKS.md) for connection, responsive behavior, failure and retry. [Historical verification](docs/verification/VERIFICATION.md) records the original PGlite run only, not native application connectivity.
+Follow [manual browser checks](docs/verification/BROWSER_CHECKS.md) for guarded registration, routing, password lifetime, accessibility, responsive behavior, failure and retry. The user's November 4, 2026 results are recorded separately from automated and native tests in [registration verification](docs/verification/REGISTRATION_STATUS.md). [Historical verification](docs/verification/VERIFICATION.md) records the original PGlite run only, not native application connectivity.

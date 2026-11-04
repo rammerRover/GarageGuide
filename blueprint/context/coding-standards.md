@@ -154,8 +154,30 @@ of the switch; the skills and `ai-interaction.md` only point back here.
 Use pytest fixtures and monkeypatching for deterministic backend behavior.
 Native PostgreSQL integration requires both `RUN_DB_TESTS=1` and effective
 `PGDATABASE=garageguide_app_test`. It is opt-in, not part of the normal Test
-command. Keep application integration checks read-only. Historical PGlite
-results are not evidence of current native application connectivity.
+command. Health integration checks remain read-only. Feature integration tests
+may make synthetic writes only in `garageguide_app_test` under these rules:
+
+- Reject any other effective database name before connecting. Immediately after
+  opening each writable native-test connection, run `SELECT current_database()`
+  once as its first statement and require exactly `garageguide_app_test` before
+  allowing writes. Apply this to fixture, API-handler, and cleanup connections;
+  recheck each new physical connection, not each subsequent statement or write.
+  Register test connections with the guarded fixture; a settings check alone
+  is insufficient. Health connections remain read-only.
+- Use unique synthetic fixtures. Register cleanup before the first write, track
+  only records created by that test, and run cleanup in finalizers even when
+  setup, requests, or assertions fail. Verify that those records were removed.
+- Cleanup must target exact test-owned identities. Never reset a database,
+  truncate tables, or delete unrelated records. Never write to `garageguide_app`
+  or `postgres`. A failed guard stops writes; failed cleanup fails the test and
+  must be resolved before continuing database testing.
+- Load only test configuration. Do not initialize schema or recreate databases
+  as part of feature tests; an unavailable or unprepared test database is a
+  prerequisite to resolve separately.
+
+Historical PGlite results are not evidence of current native application
+connectivity. Record actual native test results separately from historical or
+user-reported browser evidence.
 
 ## Browser Verification
 

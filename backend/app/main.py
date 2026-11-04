@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 
+from app.routes.auth import router as auth_router
 from app.routes.health import router as health_router
 
 
 def create_app() -> FastAPI:
     application = FastAPI(title="GarageGuide")
     application.include_router(health_router, prefix="/api")
+    application.include_router(auth_router, prefix="/api")
     return application
 
 

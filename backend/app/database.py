@@ -10,17 +10,25 @@ EXPECTED_TABLES = (
 )
 
 
-def check_database(settings: Settings) -> bool:
-    # Read-only transactions also protect against accidental writes in this check.
-    with psycopg.connect(
+def connect_database(settings: Settings, *, read_only: bool) -> psycopg.Connection:
+    transaction_mode = "on" if read_only else "off"
+    return psycopg.connect(
         host=settings.host,
         port=settings.port,
         dbname=settings.database,
         user=settings.user,
         password=settings.password,
         connect_timeout=3,
-        options="-c default_transaction_read_only=on -c statement_timeout=3000",
-    ) as connection:
+        options=(
+            f"-c default_transaction_read_only={transaction_mode} "
+            "-c statement_timeout=3000"
+        ),
+    )
+
+
+def check_database(settings: Settings) -> bool:
+    # Read-only transactions also protect against accidental writes in this check.
+    with connect_database(settings, read_only=True) as connection:
         if connection.execute("SELECT 1").fetchone() != (1,):
             return False
         rows = connection.execute(

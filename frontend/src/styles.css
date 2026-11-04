@@ -51,6 +51,47 @@ button {
 button:hover:enabled { background: #193c5b; }
 button:disabled { cursor: wait; opacity: 0.7; }
 footer { color: #4b5a67; font-size: 0.9rem; }
+.site-header, .site-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.site-header { justify-content: space-between; }
+.site-nav a { padding-block: 0.5rem; text-underline-offset: 0.2em; }
+.registration {
+  width: min(100%, 38rem);
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid #cbd4db;
+  border-radius: 0.75rem;
+  background: white;
+}
+.registration fieldset { display: grid; gap: 1.5rem; min-width: 0; border: 0; padding: 0; margin: 0; }
+.form-field { display: grid; gap: 0.4rem; min-width: 0; }
+.form-field label { font-weight: 650; }
+.form-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #738496;
+  border-radius: 0.4rem;
+  background: white;
+  color: #1d2935;
+  font: inherit;
+}
+.form-field input[aria-invalid="true"] { border: 2px solid #a12323; }
+.form-field input:disabled { background: #f5f7f8; }
+.field-hint { color: #40536a; font-size: 0.9rem; margin: 0; }
+.field-error { color: #a12323; margin: 0; }
+.form-status { margin: 0; }
+.form-status:not(:empty) { margin-top: 1.25rem; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 @media (min-width: 48rem) {
   .connection { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 }
