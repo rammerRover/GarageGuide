@@ -3,9 +3,10 @@
 Results recorded November 4, 2026 on Python 3.13.17 and pytest 8.3.5.
 Scope: Build Step 2 direct queries/transactions, Build Step 3 registration
 API behavior, Build Step 4 automated/user-browser verification, and Step 5 final
-verification. **Build Steps 1-4 are approved. Step 5 checks passed; one local
-review checkpoint is now approved and the independent audit is pending.** This
-record does not declare the feature complete or ready for `$complete`.
+verification. **Build Steps 1-4 are approved. Step 5 checks and the independent
+checkpoint audit passed; Step 5 awaits final user approval.** The requested
+post-review status edits remain uncommitted. This record does not authorize
+`$complete`; strict receipt freshness must be reconciled before completion.
 
 ## Build Step 2 results
 
@@ -176,7 +177,7 @@ evidence source and were not rerun by the agent.
 | Frontend production build | **Passed**, 43 modules; JS 234.62 kB (gzip 75.56 kB), CSS 2.46 kB (gzip 1.05 kB). The first attempt hit sandbox access denial reading parent directories/configuration; the approved retry outside the sandbox passed. |
 | Whitespace | `git diff --check` and a separate check covering untracked feature files passed. Git's LF-to-CRLF notices are line-ending warnings, not whitespace failures. |
 | Git status and builder diff review | Reviewed all 30 paths below: 14 modified tracked files, 16 untracked files, zero staged files. Branch `feature/register-a-user-account`; no feature commit, merge, push, or archive was created. No schema or private environment file changed. |
-| Independent audit | **Not performed: Phase A checkpoint precondition failed.** No reviewer findings, resolutions, request, or receipt exists; this is not a passing independent audit. See the blocker below. |
+| Independent audit | Initial Phase A was blocked before checkpoint approval. After the user approved one local checkpoint, a fresh reviewer audited that exact commit and passed all four lenses with no confirmed findings. See the independent receipt below. |
 
 The 133 collected backend cases are partitioned into 121 database-free and 12
 native cases. The deselected counts reflect that partition, not missing tests.
@@ -225,7 +226,7 @@ cleanup marker above remains user-reported browser-run evidence. Identity
 sequences may advance and were not reset. No writes to `garageguide_app`,
 `postgres`, or another database, schema changes, or initialization were performed.
 
-### Diff review and independent-audit blocker
+### Builder diff review and initial independent-audit blocker
 
 Builder review covered the feature's schema/credential helpers, exception
 boundary, parameterized queries and transaction ownership, test guards/cleanup,
@@ -243,7 +244,7 @@ Its [independent-review contract](../../.agents/skills/audit/reference/independe
 also requires a verified spec, a reliable non-equal base/target, and no differing
 paths except the findings/review ledgers.
 
-Current HEAD and the local `main` merge base are both
+At initial preflight, HEAD and the local `main` merge base were both
 `bd763da52ba52c07f3fad3200cccade663dbe756`, the pre-feature baseline. All 30
 candidate paths below are uncommitted. The user explicitly prohibited commits,
 so the builder did not stage files, create a checkpoint, prepare a misleading
@@ -254,8 +255,8 @@ execution remains automatic, subject to its fresh-context/identity requirements
 after checkpoint approval. At that preflight, Step 5 was unchecked and the spec
 was not `verified`. The user subsequently approved one local review checkpoint;
 the implementation checks are now marked complete/verified for Phase A, while
-independent acceptance remains pending. This is not an audit pass or permission
-to run `$complete`.
+independent acceptance remained pending until the later receipt below. The
+preflight itself was not an audit pass or permission to run `$complete`.
 
 ### Exact proposed checkpoint candidate / file purposes
 
@@ -299,14 +300,69 @@ build output, caches, private environments, and ignored activity are excluded.
 **Proposed commit message:** `feat: add user account registration`.
 The user subsequently approved exactly this one local review checkpoint and
 message, solely to enable independent audit. The spec's verified implementation
-status prepares Phase A; independent acceptance remains pending. No audit fixes,
-second commit, archival, merge, push, deployment, or `$complete` is approved.
+status prepared Phase A; independent acceptance was pending at preparation and
+the later passing receipt is recorded below. No audit fixes, second commit,
+archival, merge, push, deployment, or `$complete` is approved.
+
+### Approved local checkpoint and independent audit receipt
+
+The user explicitly authorized one local checkpoint, solely for independent
+audit. Before committing, the builder confirmed branch
+`feature/register-a-user-account`, matched the index to exactly the approved
+30-file inventory above, checked staged paths/content, and ran
+`git diff --cached --check` successfully. No private `.env`/credential files,
+virtual environments, node_modules, build output, caches, generated plaintext
+test-password data, or browser artifacts were staged. Tests generate synthetic
+credentials from source at runtime; the content check distinguished those
+generators and fixed UI labels/error messages from plaintext credential values.
+
+Exactly one local commit was created:
+
+```text
+ab831c9cea3c173804447cbecb0ae68cc3244dcc
+feat: add user account registration
+30 files changed, 3009 insertions(+), 39 deletions(-)
+```
+
+The working tree was clean before preparing the audit request. No fix, second
+commit, push, merge, archive, deployment, or Feature 2 work was performed.
+
+| Receipt field | Actual result |
+| --- | --- |
+| Target | `ab831c9cea3c173804447cbecb0ae68cc3244dcc` |
+| Base ref / merge base | `main` / `bd763da52ba52c07f3fad3200cccade663dbe756` |
+| Reviewed spec SHA-256 | `a43ef1c401ea443209da8a55d8fdbc29785989c34f8d9161a62af921fcba258a` |
+| Reviewer | Codex, `gpt-6.1-sol`; automatic execution in a fresh isolated subagent without the builder transcript. |
+| Scope / lenses | Complete 30-file current feature delta; quality, security, performance, tests. |
+| Verdict | **Passed.** No confirmed findings, severity entries, affected files, recommended repairs, accepted findings, or automatic fixes. |
+| Reviewer-run signals | 121 database-free backend tests passed; pip check passed; frontend lint/build passed; committed-diff whitespace passed. Build required an approved retry after sandbox access denial. |
+| Reused native evidence | Earlier Step 5's 12 guarded native tests and verified exact cleanup; not rerun by the reviewer. No reviewer database writes/connections occurred. |
+| Reused browser evidence | User's November 4, 2026 Chrome report above; not independent browser observation or automation. |
+| Check gate | Not required by the recorded request/current configuration. |
+| Receipt / ledger | `blueprint/context/review.md` and `blueprint/context/findings.md`, left uncommitted. |
+
+The builder validated the target, re-derived base, exact spec hash, requested
+and actual reviewer identity/model/execution, fresh-subagent context, required
+nonempty receipt sections, and absence of blocking findings. At validation,
+only the two permitted review-evidence paths differed from HEAD.
+
+**Post-review documentation freshness:** the user requested updating Step 5
+status after a pass while leaving documentation uncommitted. These resulting
+edits to `current-feature.md` and this record change the reviewed spec hash and
+a non-exempt tracked path. The original receipt remains untouched and documents
+the pass for the exact committed checkpoint; it is **stale for the updated
+working tree** under the installed contract. Do not claim a current completion
+receipt, rewrite its hash, or make a second commit automatically. Freshness
+requires reconciliation through separately approved workflow actions before
+`$complete` can run. No application behavior changed; no browser checks require
+repetition because of these documentation updates.
 
 ### Remaining limitations
 
-- The mandatory independent review has not yet run; no passing receipt exists.
-  One local checkpoint is now approved to enable it. `$complete` remains blocked
-  pending independent acceptance and separate user approval.
+- Independent audit passed the exact checkpoint. User-requested uncommitted
+  post-review documentation edits make its receipt stale for the current working
+  tree. `$complete` remains prohibited pending freshness reconciliation and
+  separate user approval.
 - Browser evidence is the user's November 4, 2026 Chrome report, not an automated
   run. No additional browsers or assistive-technology-specific results were
   supplied; do not infer those checks from lint/build or general keyboard results.
@@ -321,8 +377,9 @@ second commit, archival, merge, push, deployment, or `$complete` is approved.
 ## Remaining verification
 
 - Step 4: complete and approved.
-- Step 5: implementation checks passed and are marked verified for the approved
-  checkpoint; independent audit and final Step 5 acceptance remain pending.
+- Step 5: verification and independent checkpoint audit passed; complete and
+  awaiting final user approval. Post-review documentation remains uncommitted;
+  strict receipt freshness must be reconciled before completion.
 - A real simultaneous-request test remains optional hardening; unit tests cover
   translation of the database's email unique violation after rollback.
 

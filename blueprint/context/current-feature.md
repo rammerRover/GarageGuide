@@ -5,7 +5,7 @@
 **Branch:** feature/register-a-user-account
 **Archive path:** blueprint/history/features/01-register-a-user-account.md
 **Status:** verified
-**Independent review:** pending; one local review checkpoint is approved, not feature completion.
+**Independent review:** passed for checkpoint ab831c9cea3c173804447cbecb0ae68cc3244dcc; post-review status edits remain uncommitted and require freshness reconciliation before completion.
 
 ## Goal
 
@@ -17,8 +17,12 @@ Build Steps 1-4 are approved, including the user's November 4, 2026 browser
 verification. Step 5's automated/native verification and builder diff review
 passed. The user approved one 30-file local checkpoint with message
 `feat: add user account registration` solely for independent audit. Implementation
-verification is complete; final Step 5 acceptance awaits the independent receipt.
-Stop before `$complete`; do not archive, merge, push, deploy, or begin Feature 2.
+verification and the independent audit are complete. Step 5 is complete and
+awaits the user's final approval. The fresh reviewer returned a passing receipt
+with no confirmed findings for checkpoint
+`ab831c9cea3c173804447cbecb0ae68cc3244dcc`. Post-review status documentation remains
+uncommitted as requested. Stop before `$complete`; do not archive, merge, push,
+deploy, begin Feature 2, make audit fixes, or create another commit.
 
 ## In scope
 
@@ -180,14 +184,21 @@ Stop before `$complete`; do not archive, merge, push, deploy, or begin Feature 2
   pass; the user's earlier browser report remains a separate evidence source.
   **Independent-review prerequisite:** `$audit independent current` Phase A requires
   an approved committed application-code checkpoint, a verified spec, and a
-  matching working tree. HEAD and the local `main` merge base are both
+  matching working tree. At initial preflight, HEAD and the local `main` merge base were both
   `bd763da52ba52c07f3fad3200cccade663dbe756`, the pre-feature baseline; 14 tracked
   modifications and 16 untracked feature files differed from it at preflight.
   The user has now approved one local checkpoint, resolving the permission
-  blocker. This checked step and `verified` status record completed implementation
-  checks for Phase A; they do not declare a passing independent audit or final
-  Step 5 acceptance. No fixes or further commits are authorized. Do not begin
-  `$complete` while the required review remains outstanding. See
+  blocker. The approved checkpoint was created with exactly 30 files and the
+  requested message. Staged-file checks excluded private environments, credential
+  files, dependencies/build output/caches, and generated plaintext test secrets;
+  `git diff --cached --check` passed. A fresh isolated Codex `gpt-6.1-sol` reviewer
+  then reviewed the exact checkpoint across quality, security, performance, and
+  tests, returning `passed` with no confirmed findings. The builder validated
+  target/base/spec hash and receipt fields before these status edits. The reviewer
+  reran 121 database-free tests, pip check, frontend lint/build, and whitespace;
+  it explicitly reused Step 5 native results and the user's browser report.
+  No fixes or further commits are authorized. Step 5 is complete, pending final
+  user approval; `$complete` remains prohibited. See
   `docs/verification/REGISTRATION_STATUS.md` for complete results and the exact
   proposed checkpoint candidate.
 
@@ -210,7 +221,7 @@ Stop before `$complete`; do not archive, merge, push, deploy, or begin Feature 2
 | `frontend/vite.config.js` | Verify existing SPA fallback and API proxy; no speculative configuration changes. |
 | `blueprint/context/coding-standards.md`, `README.md` | Step 2 aligns older per-write guard wording with the approved per-connection policy and documents native-test instructions. |
 | `docs/verification/BROWSER_CHECKS.md` | Add the registration walkthrough during implementation. |
-| `docs/verification/REGISTRATION_STATUS.md` (created in Step 2) | Separate Step 2/3 results, Step 4 automated/user-browser evidence, and Step 5 checks, cleanup, inventory, limitations, and independent-review checkpoint blocker. Existing records retain their provenance. |
+| `docs/verification/REGISTRATION_STATUS.md` (created in Step 2) | Separate Step 2/3 results, Step 4 automated/user-browser evidence, and Step 5 checks, cleanup, checkpoint inventory, passing independent receipt, limitations, and post-review freshness. Existing records retain their provenance. |
 
 `react-router-dom` is the approved new frontend runtime dependency. Select a
 version compatible with existing React/Node; avoid unrelated upgrades. Pydantic
@@ -222,9 +233,9 @@ results. Step 4 added exactly `react-router-dom` 7.18.5 as a direct dependency;
 its three transitive packages are locked without unrelated version changes.
 The registration interface and Step 4 verification are complete. The user's
 manual browser results are recorded separately from agent-run automated checks.
-Step 4 is approved. Step 5's checks passed; the user approved exactly one local
-checkpoint to enable the outstanding independent-review gate. Final Step 5
-acceptance remains pending the audit outcome.
+Step 4 is approved. Step 5's checks and independent checkpoint audit passed.
+No findings or audit fixes were recorded. Final user approval remains pending;
+the post-review status edits are intentionally uncommitted.
 
 ## Data / contracts
 
@@ -383,7 +394,30 @@ Step 5 repeated the complete database-free/native suites, dependency consistency
 frontend lint/build, and whitespace checks. They passed. The independent audit
 initially stopped at its immutable-checkpoint precondition. One local checkpoint
 is now explicitly approved to enable that review; no receipt has yet been
-produced. No new application behavior invalidates the browser report.
+produced at that point. The subsequent fresh reviewer passed the exact approved
+checkpoint and reran 121 database-free tests, pip check, lint/build, and whitespace.
+It reused the separately identified native and user-browser evidence. No new
+application behavior invalidates the browser report.
+
+### Independent audit receipt and post-review status
+
+- Target: `ab831c9cea3c173804447cbecb0ae68cc3244dcc`; base ref `main`, merge base
+  `bd763da52ba52c07f3fad3200cccade663dbe756`.
+- Reviewed spec SHA-256:
+  `a43ef1c401ea443209da8a55d8fdbc29785989c34f8d9161a62af921fcba258a`.
+- Reviewer: Codex `gpt-6.1-sol`, automatic execution, fresh isolated subagent.
+  Verdict: passed across all four lenses. Findings/severities/affected files:
+  none. No repairs or finding acceptance was performed.
+- Receipt: `blueprint/context/review.md`; evidence ledger:
+  `blueprint/context/findings.md`. Both are uncommitted reviewer output.
+- The receipt was validated while only its permitted evidence paths differed
+  from HEAD. The user requested uncommitted Step 5 status updates after a pass;
+  these edits change the spec hash and another tracked document. Under the
+  installed strict contract, the receipt is therefore stale for this working
+  tree while preserving the independent pass for the exact checkpoint. Do not
+  call it a current completion receipt or silently change its recorded hash.
+  Reconcile freshness under separately approved workflow actions before
+  `$complete`; no second commit or re-review is authorized in this turn.
 
 | Check | Command from repository root |
 | --- | --- |
@@ -428,8 +462,12 @@ produced. No new application behavior invalidates the browser report.
   checks passed. The user subsequently approved one exact 30-file local review
   checkpoint with message `feat: add user account registration`. No audit fixes
   or further commits are approved. Do not waive or self-satisfy the independent
-  gate. Stop for approval before `$complete`; do not archive, initialize or alter
-  schema, implement Feature 2, merge, push, or deploy.
+  gate. The approved checkpoint and independent audit are now complete; no
+  findings were raised. The user-requested status edits remain uncommitted and
+  make the receipt stale for the working tree, not for its historical checkpoint.
+  Stop for approval before any further workflow action; do not run `$complete`,
+  archive, initialize or alter schema, implement Feature 2, make audit fixes,
+  create further commits, merge, push, or deploy.
 - Preserve the frozen feature ID, first build attempt, branch, and archive path.
   Previous selection found no conflicting archive/history/branch. Recheck at
   implementation without silently renaming or allocating another attempt.
