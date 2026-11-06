@@ -11,7 +11,7 @@ Plan must not be introduced during these feature loops.
 
 ## MVP Features
 
-- [ ] 1. **Register a user account.** Validate email and password input, prevent
+- [x] 1. **Register a user account.** Validate email and password input, prevent
   duplicate accounts, hash the password, and give the user clear success and
   error results without exposing sensitive details.
 - [ ] 2. **Sign in, sign out, and protect private sessions.** Verify credentials,
