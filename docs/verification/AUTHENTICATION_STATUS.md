@@ -2,12 +2,17 @@
 
 Feature 2: Sign in, sign out, and protect private sessions.
 
-Current checkpoint: Steps 1–4 approved. Step 5 implementation verification and
-checkpoint preparation passed; the active spec is verified for the proposed
-immutable checkpoint. Nothing is staged or committed. Explicit checkpoint-commit
-approval and a passing `$audit independent current` receipt remain required.
-Verified does not mean the independent audit or `$complete` has run. The dated
-sections below retain their own verification boundaries.
+Current checkpoint: the original implementation was committed as
+`fefa4b242047a0a18c02228963db3344ef2ce4fa`. Its independent audit requested
+changes for F-01 and F-02. The approved frontend repairs passed automated checks
+and separate user-performed focused browser verification in development and
+production preview. The active spec is verified for a proposed repair checkpoint.
+Both P1 findings are builder-marked fixed pending fresh independent review,
+not reviewer-closed. The original changes-requested receipt is preserved and is
+stale for the repairs. Nothing from the repair is staged or committed; explicit
+checkpoint approval and a new passing `$audit independent current` receipt remain
+required. Historical sections below retain their original evidence boundaries;
+the repair follow-up at the end is the current status. No `$complete` has run.
 
 ## Build Step 1 — November 6, 2026
 
@@ -706,3 +711,128 @@ than silently changing reviewed code or entering a status/commit/audit loop.
   existing guarded walkthrough. Guide generation is not new test evidence.
 - Feature 2 is not archived or marked complete in build-plan.md. No commit,
   merge, push, deploy, `$complete`, or Feature 3 work was performed.
+
+## F-01/F-02 repair follow-up: user browser observations and checkpoint proposal
+
+This follow-up supersedes pending-repair status only. It does not rewrite the
+earlier builder results, native evidence, November 6 Chrome report or independent
+audit. The user approved repairs for these two findings only, then supplied the
+focused browser observations below for development and production preview.
+No new observation date or browser version was supplied; the original Chrome
+version, viewport sizes and dates are not automatically reused for this report.
+
+### Original audit and repair boundaries
+
+Original reviewed HEAD: `fefa4b242047a0a18c02228963db3344ef2ce4fa`.
+Original specification SHA-256:
+`993c246ddf15d9c85b53b0d451dc630ebf89b6279862f88d3c1e37fd01cb22b4`.
+Reviewer: Codex gpt-6.1-sol in a fresh isolated subagent. Result:
+changes-requested, with F-01 and F-02 originally open at P1.
+
+The original receipt in blueprint/context/review.md remains byte-for-byte
+unchanged, SHA-256
+`5ecd89201df1f29025290616d1d8ed8535c36a0e4d8670c87e06019dfffbf209`.
+It is historical evidence and is stale for the repaired code/specification.
+The ledger retains each original explanation, reproduction and recommendation;
+builder repair notes now mark both findings fixed pending independent review.
+Fixed is not closed and still blocks completion. No independent reviewer has
+approved these repairs. Local ignored copies of the original receipt and open
+ledger are retained under blueprint/.state/staging for comparison.
+
+F-01 now uses React Router matching for account navigation instead of an exact
+pathname comparison. F-02 replaces the renewing expiry request with local
+identity clearing, pending-request cancellation and safe session-ended behavior.
+Backend validity, transactions, schema, cookies, API contracts and dependencies
+are unchanged. No additional Feature 2 product work is included.
+
+### Automated repair evidence, reused from the preceding repair pass
+
+These are actual earlier repair-pass results, not checks rerun while recording
+this browser report. Python 3.13.17, pytest 8.3.5, Node 22.23.4 and Vite 6.4.5:
+
+| Command | Repair-pass result |
+| --- | --- |
+| `node --test frontend/tests/sessionState.test.js` | 63 passed, zero failures. |
+| `node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js` | 125 passed; zero failures, cancellations, skips or todo cases. |
+| `npm --prefix frontend run lint` | Passed. |
+| `npm --prefix frontend run build` | Passed, 50 modules; approved outside-sandbox retry after the known esbuild parent-directory access denial. |
+| `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests -m "not integration" -p no:cacheprovider` | 360 passed, 87 native cases deselected; existing deprecation warning. |
+| `backend/.venv/Scripts/python.exe -m pip check` | No broken requirements found. |
+| `git diff --check` | Passed; expected LF-to-CRLF notices only. Rechecked for this documentation/checkpoint preparation. |
+
+The focused tests cover route matching/history/failures/stale responses and
+fake-clock expiry with normal, ahead and behind device clocks, equality,
+post-expiry deliberate revalidation and no idle-extension loop. Node labels its
+mock-timer API experimental. These are automated simulations, not browser runs.
+
+No backend file changed during the repairs. The agent did not reconnect to
+PostgreSQL or rerun native tests during the repair or this documentation turn.
+The earlier 87 guarded native passes and their cleanup evidence remain
+historical native evidence, separate from the user's new browser cleanup report.
+
+### User-performed focused browser observations
+
+The user reported passing these checks in both development and production
+preview. The agent did not independently perform or observe these browser runs.
+
+| Reported check | User-observed result |
+| --- | --- |
+| `/account`, `/account/`, `/ACCOUNT` | Each required fresh session validation. |
+| `/accounting` | Did not match the protected account route. |
+| Direct loads, refresh and Back/Forward | No cached private identity after logout or a rejected session. |
+| Unavailable session response | Cached account content remained gated. |
+| Idle expiration | Private identity cleared locally. |
+| Expiration network behavior | No `/api/auth/session` requests, polling or repeated requests. |
+| Deliberate navigation, visibility return and retry | Behaved according to the documented session flow. |
+| Late responses | Did not restore cleared identity. |
+| Logout/history protection and account isolation | Worked as expected. |
+| Focus, announcements and responsive layouts | Worked as expected. |
+| Guarded backend cleanup | Exact reserved synthetic account/session absence message observed. |
+
+The user reported:
+
+```text
+Verified cleanup: all reserved synthetic accounts and sessions are absent.
+```
+
+This is user-observed guarded-backend cleanup, not a new agent SQL query or
+native suite. The report does not establish a separately timed 30-minute or
+eight-hour browser observation, a browser clock-skew run, production HTTPS
+deployment, or individually labeled live-versus-simulated failure cases. No
+unreported mixed-case variant, exact viewport or zoom result is inferred.
+
+### Exact unstaged repair checkpoint candidate
+
+Branch: `feature/sign-in-sign-out-and-protect-private-sessions`.
+Parent HEAD: `fefa4b242047a0a18c02228963db3344ef2ce4fa`.
+Proposed message: `fix: prevent stale account views and idle session renewal`.
+
+The proposed checkpoint contains exactly these eight modified tracked files:
+
+| File | Purpose |
+| --- | --- |
+| `frontend/src/SessionContext.jsx` | Pass the pathname for router matching and connect the non-renewing local expiry watcher. |
+| `frontend/src/sessionState.js` | Router-consistent protected navigation, local expiry clearing and stale-request cancellation. |
+| `frontend/tests/sessionState.test.js` | Route/history/failure and fake-clock regressions. |
+| `blueprint/context/current-feature.md` | Approved repair step, verified implementation/user-browser evidence and pending independent-review gate. |
+| `docs/verification/BROWSER_CHECKS.md` | Correct expiry expectations, repeatable repair checklist and separately attributed report. |
+| `docs/verification/AUTHENTICATION_STATUS.md` | Separate repair automated/browser/cleanup evidence, historical audit and checkpoint boundaries. |
+| `blueprint/context/findings.md` | Original audit findings plus builder-fixed notes awaiting fresh independent review. |
+| `blueprint/context/review.md` | Preserve the unchanged original changes-requested receipt in the checkpoint history. |
+
+The original receipt and findings were already uncommitted audit output before
+repairs; including them preserves that review history. The original 44-file
+proposal is not overwritten. New ignored review artifacts are:
+
+- blueprint/.state/staging/feature-2-repair-checkpoint-proposal.json
+- blueprint/.state/staging/feature-2-repair-review-packet.md
+- blueprint/.state/staging/feature-2-repair-review.diff
+
+The new manifest freezes all eight raw file hashes and Git-normalized blob
+hashes, the new specification hash, parent and predicted tree. No staging,
+commit, independent audit, completion, merge, push or deployment is authorized
+by preparation. Private environment files remain ignored and unstaged; no
+backend code, database file, dependency, build output or unrelated file is
+included. After review, explicit checkpoint approval is required before staging
+and committing this exact candidate. A new independent current review is a
+later gate and must not be replaced by these builder/user verification claims.

@@ -1,3 +1,4 @@
+import { matchPath } from 'react-router-dom'
 import { getSession, loginAccount, logoutAccount } from './api.js'
 
 const unavailableMessage = "We couldn't confirm your session. Please try again."
@@ -27,12 +28,22 @@ export function createSessionStore(api = { getSession, loginAccount, logoutAccou
     return request
   }
   const current = (request) => active === request && !request.signal.aborted
+  const endSession = () => {
+    cancel()
+    needsRecheck = false
+    publish({
+      status: 'guest', user: null, expires_at: null, checkedFor: route?.key ?? null,
+      notice: 'Your session has ended. Please sign in again.', busy: null,
+    })
+  }
   const accept = (session) => {
-    const expiredOnClient = Date.parse(session.expires_at) <= now()
+    if (Date.parse(session.expires_at) <= now()) {
+      endSession()
+      return
+    }
     publish({
       user: session.user, expires_at: session.expires_at,
-      status: expiredOnClient ? 'unavailable' : 'authenticated',
-      checkedFor: route?.key ?? null, notice: expiredOnClient ? unavailableMessage : '',
+      status: 'authenticated', checkedFor: route?.key ?? null, notice: '',
     })
   }
 
@@ -107,13 +118,22 @@ export function createSessionStore(api = { getSession, loginAccount, logoutAccou
     recheck,
     login: (details, signal) => mutate('login', details, signal),
     logout: (signal) => mutate('logout', undefined, signal),
-    enter(key, protectedPage) {
+    watchExpiry() {
+      const deadline = state.expires_at
+      if (!deadline) return
+      // Expiry is local gating only; session lookup would renew server idle time.
+      const timer = setTimeout(() => {
+        if (state.expires_at === deadline) endSession()
+      }, Math.max(0, Date.parse(deadline) - now()))
+      return () => clearTimeout(timer)
+    },
+    enter(key, pathname) {
       const uncertain = Boolean(active)
       cancel()
       needsRecheck = false
-      route = { key, protected: protectedPage }
+      route = { key, protected: Boolean(matchPath('/account', pathname)) }
       publish({ busy: null })
-      if (protectedPage || uncertain || state.status === 'loading') return recheck()
+      if (route.protected || uncertain || state.status === 'loading') return recheck()
       publish({ checkedFor: key })
       return Promise.resolve()
     },

@@ -329,8 +329,11 @@ screenshots, or authentication data in console logs.
 8. Restore real fetch and remove request blocking. For real idle expiration,
    keep the account page visible without navigating or returning from a hidden
    tab for at least 30 minutes after the last valid activity. At its known
-   deadline it must recheck, receive 401, hide private information and route to
-   login with the safe session-ended message. Browser timers do not grant access.
+   deadline it must clear private React identity and route to login with the
+   safe session-ended message, without sending GET session or any other request
+   that extends idle activity. It must not poll or retry automatically afterward.
+   Deliberate navigation, visibility return, refresh/startup or retry may
+   revalidate; server expiration remains authoritative.
    Native tests separately prove the eight-hour absolute cap and strict equality.
    To claim an actual eight-hour browser observation, keep a fresh session active
    through deliberate visits less than 30 minutes apart until eight hours from
@@ -368,6 +371,60 @@ screenshots, or authentication data in console logs.
     Record new dated results, browser version, dev/preview cases, simulations,
     pending cases and the cleanup marker in AUTHENTICATION_STATUS.md. Keep the
     November 4 registration report as historical evidence, without overwriting it.
+
+### F-01/F-02 repair browser checks and reported observations
+
+The user subsequently reported completing focused repair verification in both
+development and production preview. The report confirms /account, /account/,
+/ACCOUNT, unrelated /accounting, protected history, rejected/unavailable gating,
+local expiry without session requests or polling, deliberate revalidation,
+late-response rejection, logout/isolation, focus, announcements and responsive
+layouts. The exact synthetic account/session cleanup marker was reported.
+See the separate follow-up in AUTHENTICATION_STATUS.md. No agent browser or
+database check, reviewer closure, clock-skew browser run, exact timing or
+unreported route/viewport case is inferred. The checklist below remains the
+repeatable guide; its entire contents are not a claim of observed coverage.
+The earlier November 6 Chrome report describes the original checkpoint.
+Reuse only the guarded test-backend setup and reserved synthetic
+accounts above, in both development and production preview. Keep all request
+payloads, passwords and cookie values out of logs, screenshots and exports.
+
+1. Sign in, then navigate from a public page to `/account`, `/account/`,
+   `/ACCOUNT` and `/AcCoUnT/`. Use direct loads/refresh and browser Back/Forward
+   as well. Each protected navigation must check the session before displaying
+   account identity. `/accounting`, `/accounts` and `/account/settings` must not
+   render Account or be classified as the protected account route.
+   For each variant, direct-load it while signed in, leave using the Connection
+   check Link, then use Back to return to the original variant and Forward to
+   leave again. This exercises cached identity and reused history keys; an
+   address-bar reload alone does not test that cache boundary.
+2. With cached identity, repeat variant navigation using the existing session
+   failure shim below: simulated 401 must show the safe login flow, while
+   unavailable/network/503 must show the unavailable gate and deliberate retry.
+   No cached email may flash or remain visible. Delayed session responses from
+   an earlier navigation must not overwrite a later rejection or account switch.
+   Restore real fetch and remove blocking before testing real sessions.
+3. Repeat the real visible idle check in item 8. Watch only safe Network request
+   metadata, then keep the page visible without navigating or changing tab
+   visibility. At the displayed local deadline the account must disappear and
+   the session-ended login notice must appear. There must be no expiry-triggered
+   GET, POST or follow-up retry, including after waiting past the deadline.
+4. After local expiration, deliberately navigate to an account variant, refresh
+   or return from a hidden tab. Gate identity until the new check succeeds;
+   server rejection must stay guest and availability failure must stay gated.
+   Repeat unavailable/retry, logout and Back/Forward, account switching and
+   independent-browser isolation. An aborted/delayed pre-expiry response must
+   not restore expired identity.
+5. Check focus, announcements, keyboard operation and responsive/zoom behavior
+   for the changed loading, unavailable and session-ended transitions. Stop the
+   guarded backend normally and record its exact synthetic user/session cleanup
+   marker before reporting a browser pass.
+
+The automated fake-clock tests cover normal time, five minutes ahead and five
+minutes behind, equality, stale responses and the absence of an idle-extension
+loop. Those are simulations, not browser evidence. Device clock skew can change
+when local UI hides; only PostgreSQL decides whether a session is valid. Do not
+claim these client tests prove a real 30-minute or eight-hour server boundary.
 
 ### Safe session failure simulations
 

@@ -9,7 +9,7 @@ export default function SessionProvider({ children }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
 
   useEffect(() => {
-    void store.enter(location.key, location.pathname === '/account')
+    void store.enter(location.key, location.pathname)
   }, [store, location.key, location.pathname])
 
   useEffect(() => {
@@ -30,12 +30,7 @@ export default function SessionProvider({ children }) {
     }
   }, [store])
 
-  useEffect(() => {
-    if (state.status !== 'authenticated' || !state.visible || state.busy) return
-    // One expiry boundary check, never an interval that keeps idle sessions alive.
-    const timer = setTimeout(() => { void store.recheck() }, Math.max(0, Date.parse(state.expires_at) - Date.now()))
-    return () => clearTimeout(timer)
-  }, [store, state.status, state.expires_at, state.visible, state.busy])
+  useEffect(() => store.watchExpiry(), [store, state.expires_at])
 
   const value = useMemo(() => ({ state, recheck: store.recheck, login: store.login, logout: store.logout }), [state, store])
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

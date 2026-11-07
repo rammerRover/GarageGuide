@@ -5,7 +5,7 @@
 **Branch:** feature/sign-in-sign-out-and-protect-private-sessions
 **Archive path:** blueprint/history/features/02-sign-in-sign-out-and-protect-private-sessions.md
 **Status:** verified
-**Independent-review gate:** required; checkpoint commit approval and a current passing receipt are still pending. Verified here means implementation and final checks, not independent-review approval or feature completion.
+**Independent-review gate:** required; automated repair checks and user-performed development/preview browser verification are recorded. The original changes-requested receipt is preserved as historical evidence and is stale for these repairs. Repair checkpoint approval and a new passing independent receipt remain pending; verified does not mean reviewer closure or feature completion.
 
 ## Goal
 
@@ -135,6 +135,42 @@ creation, commit, merge, or push until the appropriate subsequent approval.
   and simulated evidence in AUTHENTICATION_STATUS.md. No application behavior
   changed during final verification. Freeze this specification at the proposed
   checkpoint; subsequent audit state belongs in review.md/findings.md.
+
+### Approved audit repair step
+
+- [x] 6. Repair only independent-audit findings F-01 and F-02.
+  Use React Router matching for all protected account-route variants, without
+  matching unrelated paths. Gate cached private content until deliberate
+  navigation revalidation succeeds, including Back/Forward and failure cases.
+  Replace the activity-extending expiry request with local identity clearing
+  and session-ended behavior. Cancel pending work so late responses cannot
+  restore identity after expiry. Add route/history and fake-clock regressions.
+  **Done when:** focused and complete frontend tests, lint/build, database-free
+  backend tests, pip check and whitespace checks pass; the user repeats affected
+  browser checks and reviews the repairs. No PostgreSQL connection, staging,
+  commit or new audit is authorized by this repair step. Preserve the original
+  findings and receipt as historical evidence; they cannot approve changed code.
+  Neither finding is resolved by unit tests alone.
+  **Automated repair evidence:** 63 focused session tests and all 125 frontend
+  tests passed; frontend lint/build, all 360 database-free backend tests (87
+  native cases deselected), pip check and whitespace checks passed. Node's
+  fake-clock API reports an experimental warning; the backend retains its
+  existing Starlette/AnyIO deprecation warning. The build passed on an approved
+  retry outside the sandbox after an esbuild parent-directory access denial.
+  No backend file changed, no PostgreSQL connection was made and no native test
+  was rerun. The user's separate focused repair report now records passing
+  development and production-preview observations for /account, /account/,
+  /ACCOUNT, unrelated /accounting, direct loads/refresh/history, rejected and
+  unavailable session gating, local expiration without session requests or
+  polling, deliberate navigation/visibility/retry, late responses, logout,
+  account isolation, focus, announcements and responsive layouts. The user
+  observed: `Verified cleanup: all reserved synthetic accounts and sessions are absent.`
+  This is user-performed browser/cleanup evidence, not an agent database run or
+  reviewer finding closure. No browser version, observation date, exact viewport
+  sizes, clock-skew browser run or timed server-expiration duration was supplied
+  for this follow-up; do not inherit those details from the original report.
+  See AUTHENTICATION_STATUS.md for the separate evidence record. Both findings
+  are builder-marked fixed pending fresh independent review, not closed.
 
 ## Files / areas
 
@@ -303,9 +339,12 @@ health endpoints remain public with their existing contracts.
 - On a protected request's 401, discard private state and redirect to `/login`
   with a safe session-ended message. Login's invalid-credentials 401 instead
   displays its generic error and must not clear a previously valid session.
-- Recheck when returning to a protected page or regaining visibility, and at the
-  known expiry boundary. Until revalidation, gate potentially stale private
-  content. Server time remains authoritative; client timers never grant access.
+- Recheck on deliberate protected navigation, visibility return, refresh/startup
+  or retry. At the known local expiry boundary, clear private React identity
+  and enter the safe session-ended/login flow without an API request. An expiry
+  timer must never call an endpoint that extends idle activity. Until
+  revalidation, gate potentially stale private content. Server time remains
+  authoritative; client timers never grant access.
   Cancel/ignore stale requests after navigation, identity change, or logout so
   late responses cannot repopulate private state. Do not refresh on an interval
   merely to keep an otherwise idle session alive.
