@@ -1,0 +1,32 @@
+
+start backend:
+
+Set-Location (git rev-parse --show-toplevel)
+
+& .\backend\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
+
+start frontend:
+
+Set-Location (git rev-parse --show-toplevel)
+npm --prefix frontend run dev
+
+database testing:
+
+start...
+
+$env:RUN_DB_TESTS = '1'
+
+try {
+    & .\backend\.venv\Scripts\python.exe -m pytest `
+        -c .\backend\pyproject.toml `
+        .\backend\tests `
+        -m integration `
+        -p no:cacheprovider
+}
+finally {
+    Remove-Item Env:RUN_DB_TESTS -ErrorAction SilentlyContinue
+}
+
+remove flag...
+
+Remove-Item Env:RUN_DB_TESTS -ErrorAction SilentlyContinue
