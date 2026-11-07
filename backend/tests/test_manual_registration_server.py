@@ -2,8 +2,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from app import database, user_queries
-from app.config import Settings, get_settings, TEST_DATABASE
+from app import database, security, session_queries, user_queries
+from app.config import AuthSettings, Settings, get_settings, TEST_DATABASE
+from app.schemas import LoginRequest
 from database_support import TestDatabaseSafetyError
 import manual_registration_server as manual
 
@@ -35,6 +36,9 @@ def guarded_setup(monkeypatch):
     monkeypatch.setenv("RUN_DB_TESTS", "1")
     settings = Settings("unused", 5432, TEST_DATABASE, "synthetic", "")
     monkeypatch.setattr(manual, "load_settings", lambda *, testing: settings)
+    monkeypatch.setattr(manual, "load_auth_settings", lambda *, testing: AuthSettings(
+        "testing", False, "http://127.0.0.1:8000"
+    ))
     native = Mock()
     native.reserve_email.side_effect = [f"reserved-{n}@example.com" for n in range(3)]
     monkeypatch.setattr(manual, "NativeTestDatabase", Mock(return_value=native))
@@ -91,3 +95,34 @@ def test_manual_launcher_never_reports_success_when_cleanup_fails(guarded_setup,
     captured = capsys.readouterr()
     assert "Verified cleanup:" not in captured.out
     assert "without confirmed cleanup" in captured.err
+
+
+def test_manual_login_rejects_unreserved_credentials(guarded_setup, monkeypatch):
+    verify = Mock()
+    monkeypatch.setattr(user_queries, "verify_user_credentials", verify)
+    with manual.prepared_test_backend() as (_, emails):
+        credentials = LoginRequest(email="unreserved@example.com", password=chr(0x61) * 15)
+        with pytest.raises(TestDatabaseSafetyError):
+            user_queries.verify_user_credentials(guarded_setup[0], credentials)
+        verify.assert_not_called()
+    assert user_queries.verify_user_credentials is verify
+
+
+@pytest.mark.parametrize("operation", ["create_session", "validate_and_extend_session", "revoke_session"])
+def test_manual_session_writes_require_owned_cookie_and_restore_functions(
+    guarded_setup, monkeypatch, operation
+):
+    settings, native, _, _ = guarded_setup
+    original = Mock()
+    monkeypatch.setattr(session_queries, operation, original)
+    native.require_reserved_session.side_effect = TestDatabaseSafetyError("Unreserved session")
+    token = security.generate_session_token()
+    with manual.prepared_test_backend():
+        with pytest.raises(TestDatabaseSafetyError):
+            if operation == "create_session":
+                user = Mock(id=7, email="reserved-0@example.com")
+                session_queries.create_session(settings, user=user, presented_token=token)
+            else:
+                getattr(session_queries, operation)(settings, token)
+        original.assert_not_called()
+    assert getattr(session_queries, operation) is original

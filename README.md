@@ -1,15 +1,15 @@
 # GarageGuide
-Application stack: React (Vite and JavaScript) → FastAPI (Python 3.13) → PostgreSQL (psycopg). The connection screen is at `/`; account registration is at `/register`. The registration API and UI are implemented, with user-reported browser verification recorded November 4, 2026. Final independent review remains outstanding. Other product features remain planned.
+Application stack: React (Vite and JavaScript) → FastAPI (Python 3.13) → PostgreSQL (psycopg). The connection screen is at `/`; completed account registration is at `/register`, with its original browser report recorded November 4, 2026. Feature 2's authentication API and React interfaces have passed final implementation checks, with user-performed development/preview browser observations recorded November 6, 2026. An approved review checkpoint and independent audit remain required before completion.
 
 ## Structure
 
 | Directory | Purpose |
 | --- | --- |
 | `frontend/` | Vite configuration, npm scripts and dependency lockfile. |
-| `frontend/src/` | React Router entry point, connection and registration pages, API helpers and responsive CSS. |
+| `frontend/src/` | One React Router, public connection/registration/login pages, protected account page, in-memory session state, API helpers and responsive CSS. |
 | `backend/` | Requirements, example environments and pytest tool configuration. Dependencies are declared only in requirements files. |
 | `backend/app/` | App creation, private settings, credential validation/hashing, and direct psycopg queries with explicit transaction boundaries. |
-| `backend/app/routes/` | Health endpoints and account registration with sanitized errors. |
+| `backend/app/routes/` | Public health endpoints, registration, and login/session/logout APIs with safe errors and CSRF enforcement. |
 | `backend/tests/` | Database-free health/registration tests, guarded opt-in native transaction/API checks, and a synthetic-account-only manual browser backend launcher. |
 | `database/` | Existing authoritative SQL and database instructions. |
 | `docs/verification/` | Historical database evidence and current manual verification instructions. |
@@ -49,6 +49,16 @@ Copy-Item backend/.env.test.example backend/.env.test
 
 Do not overwrite existing private environment files. Edit the private files to supply `PGUSER` and `PGPASSWORD`, keeping the database names distinct. Exported PostgreSQL environment variables override file values. Remove unintended `PGDATABASE` overrides before tests. Tests never load the development `.env`.
 
+Authentication, including registration, now requires the explicit `AUTH_*` keys
+shown in the corresponding environment example. For loopback development use
+`AUTH_ENVIRONMENT=development`, `AUTH_COOKIE_SECURE=false`,
+`AUTH_API_ORIGIN=http://127.0.0.1:8000`, and an empty `AUTH_FRONTEND_ORIGIN`.
+The guarded manual test backend instead requires `AUTH_ENVIRONMENT=testing`
+in `.env.test`. Existing private files were not automatically edited. Missing
+or invalid auth settings fail closed with a generic 503; health remains public.
+Production requires Secure=true and explicitly configured, matching HTTPS
+API/frontend origins. No production hostname is supplied by default.
+
 For runtime-only installation use `backend/requirements.txt`; `requirements-dev.txt` includes it and adds testing dependencies. `pyproject.toml` contains tool settings only.
 
 From the repository root, start FastAPI; `--app-dir backend` makes the backend application importable:
@@ -77,6 +87,38 @@ duplicate-email message, generic 503 database-unavailable errors, or a generic
 500 for unexpected failures. Raw validation input, request bodies, credentials,
 hashes, SQL, and driver details are excluded from responses and application logs.
 
+Registration, login, and logout require JSON (ordinary charset parameters are
+accepted), the exact trusted browser Origin, and `X-GarageGuide-CSRF: 1`.
+Trusted local frontend origins are `http://127.0.0.1:5173` and
+`http://127.0.0.1:4173`; use these addresses rather than substituting localhost.
+The browser supplies Origin; the registration helper supplies the custom header
+and explicit same-origin credentials. Rejections return fixed 403 feedback
+before parsing the body or performing business writes. No permissive CORS is added.
+
+- `POST /api/auth/login`: email/password only; 200 returns exactly public `user`
+  and `expires_at` after session commit. Unknown email and wrong password share
+  `401 {"detail":"Invalid email or password."}` without disturbing an old session.
+- `GET /api/auth/session`: cookie-based trusted identity and atomic idle extension.
+  Unusable sessions return 401 and clear the cookie; database failure returns 503
+  and preserves it. No mutation headers are required for this GET.
+- `POST /api/auth/logout`: JSON `{}` plus CSRF headers; revoke the current browser
+  session, commit, clear its cookie, and return an empty 204. Repetition is safe;
+  other devices remain signed in. Database failure preserves the cookie.
+
+The `garageguide_session` cookie is HttpOnly, SameSite=Lax, Path=/, host-only,
+with no Domain and no persistent lifetime attributes when issued. Secure=false
+is permitted only in validated loopback development/testing. PostgreSQL stores
+only the lowercase SHA-256 token hash. Server validity requires an unrevoked
+session strictly before its 30-minute idle deadline and eight-hour absolute cap;
+activity extends only to the earlier limit. All authentication responses use
+`Cache-Control: no-store`, and tokens/hashes never appear in JSON responses.
+Login rate limiting remains a separate production-security decision.
+
+See [authentication evidence](docs/verification/AUTHENTICATION_STATUS.md) for
+separate frontend, database-free backend, and native API results. New browser
+observations are recorded separately from tests; final independent review is
+still pending for Feature 2.
+
 ## Frontend
 
 In another terminal from the repository root:
@@ -93,8 +135,30 @@ React Router keeps the connection screen at `/` and the registration page at
 `/register`; header links navigate without a document reload. Registration uses
 a single POST with a 10-second timeout and no automatic retry. Correctable
 validation or network failures retain passwords only in temporary component
-state. Success, other failures, and leaving the page clear them. No sign-in,
-session, protected route, or browser storage is added.
+state. Success, other failures, and leaving the page clear them.
+
+`/login` uses the same credential rules and ten-second/no-replay request bound.
+`/account` displays only the validated public email and session deadline, with a
+current-browser sign-out control. Session restoration uses GET /api/auth/session
+on startup; protected navigation, visibility return, and the known expiry boundary
+recheck before displaying private content. Loading/unavailable states gate that
+content. There is no periodic keepalive. A 401 clears private React state; a
+network/503 failure permits deliberate retry without claiming logout. Stale
+responses cannot restore an old identity after navigation or sign-out.
+
+Only validated public user data, expiry, and UI state live in React memory.
+HttpOnly cookies transport tokens without JavaScript reading them. Authentication
+data is never put in browser storage, URLs, or router state. Login passwords stay
+only in temporary form state after correctable validation/credential/network
+failures and clear after success, other failures, or departure. The guarded manual
+guide covers these behaviors; they are not browser-verified by a production build.
+
+Focused frontend checks use the installed Node runtime's built-in test tooling;
+no external test runner or dependency was installed:
+
+```powershell
+node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js
+```
 
 For browser tests that create accounts, replace the ordinary backend command
 with the guarded test-only launcher in [the browser guide](docs/verification/BROWSER_CHECKS.md).

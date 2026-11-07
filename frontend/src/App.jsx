@@ -2,6 +2,10 @@ import { useState } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import { checkConnection } from './api.js'
 import Register from './Register.jsx'
+import Login from './Login.jsx'
+import Account from './Account.jsx'
+import RequireSession from './RequireSession.jsx'
+import SessionProvider from './SessionContext.jsx'
 
 const messages = {
   idle: 'Ready to check the connection.',
@@ -47,21 +51,27 @@ function ConnectionScreen() {
 
 export default function App() {
   return (
-    <div className="shell">
-      <header className="site-header">
-        <Link className="brand" to="/">GarageGuide</Link>
-        <nav className="site-nav" aria-label="Main navigation">
-          <Link to="/">Connection check</Link>
-          <Link to="/register">Create account</Link>
-        </nav>
-      </header>
-      <main>
-        <Routes>
-          <Route path="/" element={<ConnectionScreen />} />
-          <Route path="/register" element={<Register />} />
-        </Routes>
-      </main>
-      <footer>GarageGuide · Project foundation</footer>
-    </div>
+    <SessionProvider>
+      <div className="shell">
+        <header className="site-header">
+          <Link className="brand" to="/">GarageGuide</Link>
+          <nav className="site-nav" aria-label="Main navigation">
+            <Link to="/">Connection check</Link>
+            <Link to="/register">Create account</Link>
+            <Link to="/login">Sign in</Link>
+            <Link to="/account">Account</Link>
+          </nav>
+        </header>
+        <main>
+          <Routes>
+            <Route path="/" element={<ConnectionScreen />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/account" element={<RequireSession><Account /></RequireSession>} />
+          </Routes>
+        </main>
+        <footer>GarageGuide · Project foundation</footer>
+      </div>
+    </SessionProvider>
   )
 }

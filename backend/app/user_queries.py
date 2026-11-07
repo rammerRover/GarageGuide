@@ -2,8 +2,9 @@ from datetime import datetime
 
 import psycopg
 
-from app import database
+from app import database, security
 from app.config import Settings
+from app.schemas import LoginRequest, RegistrationResponse
 
 
 EMAIL_UNIQUE_CONSTRAINT = "users_email_key"
@@ -48,3 +49,20 @@ def create_user(
             raise DuplicateEmailError() from None
         raise
     return user
+
+
+def verify_user_credentials(
+    settings: Settings, credentials: LoginRequest
+) -> RegistrationResponse | None:
+    # Keep stored credentials inside this verification boundary; only public data leaves.
+    with database.connect_database(settings, read_only=True) as connection:
+        row = connection.execute(
+            "SELECT id, email, created_at, password_hash FROM public.users WHERE email = %s",
+            (credentials.email,),
+        ).fetchone()
+    verified = security.verify_credentials(
+        credentials.password, row[3] if row is not None else None
+    )
+    if not verified:
+        return None
+    return RegistrationResponse(id=row[0], email=row[1], created_at=row[2])

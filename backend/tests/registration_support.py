@@ -60,7 +60,10 @@ class RegistrationInput:
                 content = json.dumps(body, ensure_ascii=True).encode("ascii")
             return client.post(
                 "/api/auth/register", content=content,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json", "Origin": "http://127.0.0.1:5173",
+                    "X-GarageGuide-CSRF": "1",
+                },
             )
         except Exception:
             pytest.fail("Registration request raised unexpectedly; details redacted", pytrace=False)
@@ -72,6 +75,7 @@ class RegistrationInput:
             pytest.fail("Registration did not return JSON; details redacted", pytrace=False)
 
     def assert_redacted(self, response, caplog):
+        assert response.headers.get("cache-control") == "no-store"
         visible = response.text + json.dumps(self.result(response), ensure_ascii=False) + caplog.text
         exposed = any(value in visible for value in self._sensitive if value)
         if exposed:

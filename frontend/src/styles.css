@@ -54,7 +54,7 @@ footer { color: #4b5a67; font-size: 0.9rem; }
 .site-header, .site-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
 .site-header { justify-content: space-between; }
 .site-nav a { padding-block: 0.5rem; text-underline-offset: 0.2em; }
-.registration {
+.registration, .session-panel {
   width: min(100%, 38rem);
   padding: clamp(1rem, 3vw, 2rem);
   border: 1px solid #cbd4db;

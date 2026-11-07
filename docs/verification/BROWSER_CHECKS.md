@@ -9,6 +9,14 @@ was available to the agent. The instructions below remain the repeatable manual
 guide; unreported individual checks are not additional observed evidence. Keep
 historical scaffold evidence separate.
 
+Feature 2 Step 4 adds login, session restoration, protected account routing, and
+logout. Its automated/backend/native checks do not replace browser observations.
+The user's November 6, 2026 report in Chrome 156.0.8078.73 covers development,
+production preview, authentication, registration/CSRF, failure behavior,
+accessibility and responsive layouts, with the exact cleanup marker. Those
+observations are recorded in AUTHENTICATION_STATUS.md. The instructions below
+remain repeatable guidance; unreported cases are not additional browser passes.
+
 ## Guarded test backend and Vite
 
 Run from the repository root. Stop any ordinary backend on port 8000 first.
@@ -16,6 +24,36 @@ Use the existing initialized `garageguide_app_test` and private
 `backend/.env.test`; do not edit or display credentials. Exported PostgreSQL
 variables override that file, so remove unintended overrides privately.
 Do not initialize databases or run schema scripts for these checks.
+
+The test launcher now also requires the explicit authentication keys from
+`backend/.env.test.example`, including `AUTH_ENVIRONMENT=testing`,
+`AUTH_COOKIE_SECURE=false`, `AUTH_API_ORIGIN=http://127.0.0.1:8000`, and empty
+`AUTH_FRONTEND_ORIGIN`. Add only missing auth keys privately; do not overwrite
+database settings or display credentials. An invalid configuration stops startup.
+
+The exact non-secret keys are below. Add only missing keys to the appropriate
+private file yourself; the agent has not inspected or edited those files.
+Do not replace their PostgreSQL credentials or copy the development database
+name into test configuration. Browser verification stays pending until the test
+auth keys are configured. Environment overrides must agree with testing mode.
+
+For `backend/.env` (ordinary development, not the browser verification backend):
+
+```dotenv
+AUTH_ENVIRONMENT=development
+AUTH_COOKIE_SECURE=false
+AUTH_API_ORIGIN=http://127.0.0.1:8000
+AUTH_FRONTEND_ORIGIN=
+```
+
+For `backend/.env.test` (the guarded browser verification backend):
+
+```dotenv
+AUTH_ENVIRONMENT=testing
+AUTH_COOKIE_SECURE=false
+AUTH_API_ORIGIN=http://127.0.0.1:8000
+AUTH_FRONTEND_ORIGIN=
+```
 
 In a dedicated PowerShell terminal:
 
@@ -41,6 +79,27 @@ Use **only those three printed emails**, called A, B, and C below. Reservation
 does not insert accounts. Other emails are rejected before user queries by
 this test-only launcher; that restriction is not normal product behavior.
 Access logging is disabled. Passwords and credentials are never printed.
+Login/session/logout operations are restricted to the same reserved users and
+their sessions. The launcher verifies session ownership before session writes;
+its final cleanup covers both users and sessions. Only `/`, `/register`, `/login`,
+and the protected `/account` are application pages.
+
+Before recording the new registration contract as passed:
+
+1. Use the exact development/preview addresses shown below. On a real registration
+   with a reserved email, inspect only the required header names/values and safe
+   status: browser Origin matches port 5173 or 4173, Content-Type is JSON, and
+   X-GarageGuide-CSRF is 1. Expect committed 201, then normalized duplicate 409;
+   repeat invalid-form/error clearing, focus, pending state, and password clearing.
+2. Confirm authentication responses carry Cache-Control: no-store. Do not copy
+   request bodies, cookie values, full header dumps, or populated-secret screenshots.
+3. With the guarded backend, this empty logout request deliberately omits the
+   marker and must return fixed 403 without changing a session:
+   `fetch('/api/auth/logout', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: '{}'}).then(r => r.status)`.
+   Missing/null/malformed/untrusted Origin cases are covered by native tests;
+   do not weaken browser security or attempt to set the forbidden Origin header.
+4. Record new observed results and final exact cleanup in AUTHENTICATION_STATUS.md.
+   The earlier November 4 report remains historical evidence for Feature 1.
 
 In another terminal, use the existing fnm Node installation (22.12+). If Node
 is absent from PATH, enable this project's current installation for this terminal:
@@ -69,7 +128,8 @@ browser's own password manager is separate from application state.
    Network's Document filter should show no page reload for those links.
 7. Directly load and refresh `/register`. Exercise Back/Forward and full-document
    departure/Back. After leaving a populated form, returning must show empty
-   passwords. Only `/` and `/register` are application pages.
+   passwords. `/` and `/register` remain public; `/login` is also public, while
+   `/account` must confirm a valid server session before showing account content.
 
 ## Form validation and real registration
 
@@ -191,13 +251,183 @@ Enter B and valid matching synthetic passwords directly into the form:
    for this exact message before recording a pass:
 
    ```text
-   Verified cleanup: all reserved synthetic accounts are absent.
+   Verified cleanup: all reserved synthetic accounts and sessions are absent.
    ```
 
-Cleanup recovers IDs by exact reserved email, deletes only those exact ID/email
-pairs, commits, then verifies absence on a separate guarded connection. Never
+Cleanup recovers IDs by exact reserved email and sessions by those owned user IDs,
+deletes sessions by exact ID/user ID/token hash and users by exact ID/email,
+commits, then verifies absence on a separate guarded connection. Never
 force-kill the launcher during cleanup. If the marker is missing, do not record
 a pass or continue native testing. Retain only the printed fixture-email list
 and resolve those exact fixtures; never use broad deletion, truncate/reset, or
 write to `garageguide_app`. Sequence gaps are expected. Record safe outcomes
 and the verified-cleanup marker in `REGISTRATION_STATUS.md`.
+
+## Feature 2 Step 4 session walkthrough — instructions
+
+These are instructions; the user's reported results are recorded separately in
+AUTHENTICATION_STATUS.md. Configure the non-secret test auth
+keys above first. Use a fresh run of the guarded backend with its new printed
+A/B/C emails for this walkthrough. If you already consumed those emails in the
+earlier detailed registration checklist, stop that launcher, wait for verified
+cleanup, and start a new one. Do not reuse old fixture identities across runs.
+
+Use a clean disposable browser profile, plus an independent Incognito/profile
+cookie jar for the second browser. Two Incognito windows in the same profile can
+share cookies and do not prove independent sessions. Decline password-manager
+storage. Do not view/export cookies, request payloads, HAR files, populated-secret
+screenshots, or authentication data in console logs.
+
+1. At `http://127.0.0.1:5173`, check the connection screen and both public health
+   endpoints. Direct-load/refresh `/register` and `/login`; use Link navigation
+   and Back/Forward. With no cookie, direct-load `/account`: it must show the
+   session check, then `/login` with safe feedback and no account email/content.
+2. At `/register`, check labels, empty/invalid input, stale-error clearing,
+   focus, keyboard operation, pending lock, and the existing password lifecycle.
+   Register A using a disposable password entered only into the form. Expect 201,
+   success feedback and cleared passwords. Reuse normalized A for 409. Confirm
+   JSON, the browser's exact Origin, custom CSRF header and same-origin URL, and
+   no-store responses without exposing payloads or cookie values.
+3. At `/login`, check labeled email/current-password autocomplete and field
+   descriptions/errors. Empty fields and invalid Unicode length must focus the
+   first invalid field. Enter an invalid email to exercise a real sanitized 422;
+   fix it and confirm the error clears. Try A with a wrong valid-length password,
+   then the still-unregistered reserved C with a valid-length password: both must
+   display exactly the same invalid-credentials message. Passwords remain transient
+   after those correctable failures. Do not use an unreserved email: the manual
+   launcher deliberately rejects it rather than querying an unrelated account.
+4. Sign in as A correctly. Expect one POST, cleared password, `/account`, email A,
+   the public session deadline, and Sign out. Direct-load/refresh `/account`:
+   no private content appears until GET session succeeds. Leave/return via a
+   public page and via tab visibility. Inspect only safe request metadata; a new
+   GET must validate the session before private content returns. No periodic
+   polling should occur just to keep the idle session alive.
+5. In the independent cookie jar, sign in as A. Sign out in the first browser:
+   expect one POST, empty 204, no private UI, and `/login`. Back/Forward and direct
+   `/account` must not restore account content. In the second browser, refresh
+   `/account`: A remains signed in. In the first browser, repeat logout safely
+   with this empty, secret-free request; it must return 204:
+
+   ```javascript
+   fetch('/api/auth/logout', {
+     method: 'POST', credentials: 'same-origin',
+     headers: {'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1'}, body: '{}'
+   }).then(response => response.status)
+   ```
+
+6. In the first browser, sign in as A again, register B, then use `/login` to
+   switch to B. The account page must show B only. The independent browser must
+   still show A after revalidation. A failed login attempt while B is signed in
+   must preserve B's valid session; use the Account link to confirm. No vehicle,
+   dashboard, editing, role or device-management functionality should appear.
+7. Use the simulated failures below for login/logout pending state and safe
+   feedback, and for unavailable/protected 401 behavior. Also block only the
+   `/api/auth/session` request in browser Network request blocking and refresh
+   `/account`. The page must show unavailable/retry, not a successful logout or
+   private content. Unblock it and press Try again: the real valid cookie can
+   restore B. Do not stop PostgreSQL or alter database credentials for this check.
+8. Restore real fetch and remove request blocking. For real idle expiration,
+   keep the account page visible without navigating or returning from a hidden
+   tab for at least 30 minutes after the last valid activity. At its known
+   deadline it must recheck, receive 401, hide private information and route to
+   login with the safe session-ended message. Browser timers do not grant access.
+   Native tests separately prove the eight-hour absolute cap and strict equality.
+   To claim an actual eight-hour browser observation, keep a fresh session active
+   through deliberate visits less than 30 minutes apart until eight hours from
+   login, then verify rejection despite that activity. If not performed, record
+   absolute-cap evidence as native only; never invent an eight-hour browser pass.
+9. At 375, 768 and 1440 CSS pixels, and at 200% zoom, check all four pages and
+   loading/unavailable/error states for wrapping and absence of horizontal scroll.
+   Use keyboard-only navigation, visible focus, associated labels/errors,
+   first-error/feedback focus, polite pending announcements and error alerts.
+   If no screen reader is used, distinguish inspected ARIA from a spoken-output
+   observation. Never capture a screenshot with populated password fields.
+10. Stop only Vite dev (Ctrl+C), keeping the guarded backend alive. In the frontend
+    terminal run the exact commands below, then open `http://127.0.0.1:4173`:
+
+    ```powershell
+    $env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+    npm --prefix frontend run build
+    npm --prefix frontend run preview
+    ```
+
+    Repeat direct loads/refresh/history, login success/failure, restoration,
+    unavailable/retry, logout/back safety, keyboard/zoom/responsive checks, and
+    registration validation/clearing. Use C for preview registration 201/duplicate
+    409 only after the earlier unknown-account test. Preview Origin is exactly
+    http://127.0.0.1:4173. Test the independent cookie jars again as appropriate.
+11. Restore all mocks and blocking, sign out test browsers, stop preview, then
+    Ctrl+C the guarded backend and wait for:
+
+    ```text
+    Verified cleanup: all reserved synthetic accounts and sessions are absent.
+    ```
+
+    The launcher commits exact owned-record cleanup and independently verifies
+    absence. Do not force-kill it or claim cleanup if this message is absent.
+    Record new dated results, browser version, dev/preview cases, simulations,
+    pending cases and the cleanup marker in AUTHENTICATION_STATUS.md. Keep the
+    November 4 registration report as historical evidence, without overwriting it.
+
+### Safe session failure simulations
+
+This browser-only shim intercepts one selected auth path without reading,
+retaining, or logging request bodies or cookie values; it uses the abort signal.
+It never sends the matched
+request to the database while a failure mode is active. Other paths still reach
+only the guarded backend. Restore it before real tests. A simulated 401 does
+not actually revoke or delete a server cookie and is not proof of real expiration.
+
+```javascript
+(() => {
+  const originalFetch = window.fetch.bind(window)
+  const check = { path: 'login', mode: 'off', calls: 0 }
+  check.restore = () => { window.fetch = originalFetch; delete window.authCheck }
+  window.authCheck = check
+  window.fetch = async (resource, options) => {
+    if (resource !== '/api/auth/' + check.path || check.mode === 'off') {
+      return originalFetch(resource, options)
+    }
+    check.calls += 1
+    if (check.mode === 'network') throw new TypeError('Simulated network failure')
+    if (check.mode === 'timeout') {
+      return new Promise((resolve, reject) => {
+        const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+        if (options?.signal?.aborted) abort()
+        else options?.signal?.addEventListener('abort', abort, {once: true})
+      })
+    }
+    if (check.mode === 'malformed') return new Response('invalid JSON', {status: 200})
+    const outcomes = {
+      forbidden: [403, 'Request not allowed.'],
+      unavailable: [503, check.path === 'register' ?
+        'Registration unavailable. Please try again.' : 'Authentication unavailable. Please try again.'],
+      unexpected: [500, 'Internal server error'],
+      rejected: [401, check.path === 'login' ? 'Invalid email or password.' : 'Not authenticated.'],
+    }
+    const [status, detail] = outcomes[check.mode] ?? outcomes.unexpected
+    return new Response(JSON.stringify({detail}), {status, headers: {'Content-Type': 'application/json'}})
+  }
+})()
+```
+
+- For login, set `authCheck.path = 'login'`. Exercise network, timeout, forbidden,
+  unavailable, unexpected, malformed and rejected modes. Timeout must last about
+  ten seconds with one POST and disabled repeated submission. Network/timeout/
+  rejected feedback retains only temporary form passwords; 403/503/500/malformed
+  responses clear them. After every departure/return, passwords must be empty.
+- For logout, select `authCheck.path = 'logout'`. Network/timeout/503 must show
+  safe retry feedback without claiming logout or dropping the prior public session.
+  The sign-out button must prevent repeats while pending. Restore the shim and
+  deliberately retry to prove real 204 behavior.
+- For protected availability, select `authCheck.path = 'session'` and an unavailable,
+  network, timeout or malformed mode, then leave/return to Account or regain tab
+  visibility. Private content must remain gated with deliberate Try again. Restore
+  real transport and retry. A rejected mode must instead clear private React state
+  and go to login; record it as a simulation, then reconcile through the real API.
+- Registration's earlier simulation section remains valid. To use this shim for
+  its 503/500/network/timeout cases, select `authCheck.path = 'register'`. Restore
+  either shim before using the other; do not layer them.
+- Finish with `authCheck.restore()`. Record counts/modes/statuses only, without
+  copying credentials or cookie values. Build output and these instructions do
+  not count as observed browser acceptance.

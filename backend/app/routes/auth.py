@@ -1,15 +1,16 @@
 import logging
 
 import psycopg
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from starlette.exceptions import HTTPException
+from starlette.concurrency import run_in_threadpool
 
-from app import security, user_queries
-from app.config import Settings, get_settings
-from app.schemas import RegistrationRequest, RegistrationResponse
+from app import authentication, security, session_queries, user_queries
+from app.config import AuthConfigurationError, AuthSettings, Settings, get_settings
+from app.schemas import LoginRequest, LogoutRequest, RegistrationRequest, RegistrationResponse, SessionResponse
 
 
 logger = logging.getLogger(__name__)
@@ -67,17 +68,35 @@ def _credential_response(error):
 
 
 def _internal_error():
-    logger.error("Registration failed unexpectedly")
+    logger.error("Authentication request failed unexpectedly")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
-class RegistrationRoute(APIRoute):
+class AuthenticationRoute(APIRoute):
     def get_route_handler(self):
         handler = super().get_route_handler()
 
         async def safe_handler(request: Request):
+            response = await safe_response(request)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        async def safe_response(request: Request):
             try:
+                auth_settings = await run_in_threadpool(authentication.request_auth_settings, request)
+                if request.method not in ("GET", "HEAD", "OPTIONS"):
+                    authentication.require_mutation_policy(request, auth_settings)
                 return await handler(request)
+            except authentication.AuthenticationFailure as error:
+                detail = (
+                    "Registration unavailable. Please try again."
+                    if error.status_code == 503 and self.path.endswith("/register") else error.detail
+                )
+                return JSONResponse(
+                    status_code=error.status_code, content={"detail": detail}, headers=error.headers
+                )
+            except authentication.RequestPolicyError:
+                return JSONResponse(status_code=403, content={"detail": "Request not allowed."})
             except RequestValidationError as error:
                 return _validation_response(error.errors())
             except security.CredentialValidationError as error:
@@ -87,11 +106,14 @@ class RegistrationRoute(APIRoute):
                     status_code=409,
                     content={"detail": "An account with this email already exists."},
                 )
-            except (psycopg.OperationalError, psycopg.InterfaceError, psycopg.errors.QueryCanceled):
-                logger.warning("Registration database unavailable")
+            except (AuthConfigurationError, psycopg.OperationalError, psycopg.InterfaceError, psycopg.errors.QueryCanceled):
+                logger.warning("Authentication request unavailable")
                 return JSONResponse(
                     status_code=503,
-                    content={"detail": "Registration unavailable. Please try again."},
+                    content={"detail": (
+                        "Registration unavailable. Please try again."
+                        if self.path.endswith("/register") else "Authentication unavailable. Please try again."
+                    )},
                 )
             except HTTPException as error:
                 if error.status_code == 400:
@@ -104,7 +126,9 @@ class RegistrationRoute(APIRoute):
         return safe_handler
 
 
-router = APIRouter(prefix="/auth", tags=["auth"], route_class=RegistrationRoute)
+router = APIRouter(
+    prefix="/auth", tags=["auth"], route_class=AuthenticationRoute,
+)
 
 
 @router.post("/register", status_code=201, response_model=RegistrationResponse)
@@ -118,3 +142,46 @@ def register_account(
         settings, email=account.email, password_hash=password_hash
     )
     return RegistrationResponse(id=user[0], email=user[1], created_at=user[2])
+
+
+@router.post("/login", response_model=SessionResponse)
+def login(
+    credentials: LoginRequest, request: Request,
+    settings: Settings = Depends(get_settings),
+    auth_settings: AuthSettings = Depends(authentication.request_auth_settings),
+) -> Response:
+    user = user_queries.verify_user_credentials(settings, credentials)
+    if user is None:
+        return JSONResponse(status_code=401, content={"detail": "Invalid email or password."})
+    prepared = None
+
+    def prepare_response(issued: session_queries.IssuedSession):
+        nonlocal prepared
+        prepared = JSONResponse(content=issued.session.public_response().model_dump(mode="json"))
+        authentication.set_session_cookie(prepared, issued.token, request, auth_settings)
+
+    session_queries.create_session(
+        settings, user=user, presented_token=authentication.read_session_token(request),
+        prepare_response=prepare_response,
+    )
+    if prepared is None:
+        raise RuntimeError("Session response was not prepared")
+    return prepared
+
+
+@router.get("/session", response_model=SessionResponse)
+def current_session(
+    actor: session_queries.AuthenticatedSession = Depends(authentication.require_authenticated_session),
+) -> SessionResponse:
+    return actor.public_response()
+
+
+@router.post("/logout", status_code=204)
+def logout(
+    body: LogoutRequest, request: Request, settings: Settings = Depends(get_settings),
+    auth_settings: AuthSettings = Depends(authentication.request_auth_settings),
+) -> Response:
+    response = Response(status_code=204)
+    authentication.clear_session_cookie(response, request, auth_settings)
+    session_queries.revoke_session(settings, authentication.read_session_token(request))
+    return response

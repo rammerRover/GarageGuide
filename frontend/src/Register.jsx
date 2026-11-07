@@ -1,32 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { registerAccount } from './api.js'
+import { validateRegistrationFields } from './credentialValidation.js'
 
 
 const fieldNames = ['email', 'password', 'password_confirmation']
 const fieldLabels = {
   email: 'Email address', password: 'Password', password_confirmation: 'Confirm password',
-}
-
-function validateFields(fields) {
-  const errors = {}
-  if (!fields.email.trim()) errors.email = 'Enter your email address.'
-  const normalized = {}
-  for (const name of ['password', 'password_confirmation']) {
-    normalized[name] = fields[name].normalize('NFC')
-    const characters = Array.from(normalized[name])
-    if (characters.some((character) => {
-      const codepoint = character.codePointAt(0)
-      return codepoint >= 0xD800 && codepoint <= 0xDFFF
-    })) {
-      errors[name] = 'Enter valid Unicode characters.'
-    } else if (characters.length < 15 || characters.length > 128) {
-      errors[name] = 'Use between 15 and 128 characters.'
-    }
-  }
-  if (!errors.password_confirmation && normalized.password !== normalized.password_confirmation) {
-    errors.password_confirmation = 'Passwords must match.'
-  }
-  return errors
 }
 
 export default function Register() {
@@ -96,7 +75,7 @@ export default function Register() {
     event.preventDefault()
     if (requestRef.current) return
     setFeedback(null)
-    const invalid = validateFields(fields)
+    const invalid = validateRegistrationFields(fields)
     setErrors(invalid)
     if (Object.keys(invalid).length) {
       setFeedback({ kind: 'error', message: 'Check the highlighted fields.' })

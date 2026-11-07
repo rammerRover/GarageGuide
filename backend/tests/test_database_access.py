@@ -188,10 +188,12 @@ def test_cleanup_targets_only_reserved_email_and_recovered_id(settings):
         Mock(fetchone=lambda: (TEST_DATABASE,)), Mock(fetchone=lambda: None)
     ]
     writer.execute.side_effect = [
-        Mock(fetchone=lambda: (TEST_DATABASE,)), Mock(fetchone=lambda: (42,)), Mock()
+        Mock(fetchone=lambda: (TEST_DATABASE,)), Mock(fetchone=lambda: (42,)),
+        Mock(fetchall=lambda: []), Mock()
     ]
     reader.execute.side_effect = [
-        Mock(fetchone=lambda: (TEST_DATABASE,)), Mock(fetchall=lambda: [])
+        Mock(fetchone=lambda: (TEST_DATABASE,)), Mock(fetchall=lambda: []),
+        Mock(fetchall=lambda: [])
     ]
     for connection in (lookup, writer, reader):
         connection.__enter__.return_value = connection
@@ -202,9 +204,13 @@ def test_cleanup_targets_only_reserved_email_and_recovered_id(settings):
     assert writer.execute.call_args_list[-1].args == (
         "DELETE FROM public.users WHERE id = %s AND email = %s", (42, email)
     )
-    assert reader.execute.call_args_list[-1].args == (
+    assert reader.execute.call_args_list[-2].args == (
         "SELECT id FROM public.users WHERE email = ANY(%s)", ([email],)
     )
+    assert reader.execute.call_args_list[-1].args == (
+        "SELECT id FROM public.user_sessions WHERE id = ANY(%s) OR user_id = ANY(%s)", ([], [42])
+    )
+    assert native.cleanup_verified and native.cleanup_counts == (1, 0)
     native.cleanup()
     assert connect.call_count == 3
 

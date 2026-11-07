@@ -4,6 +4,7 @@ import psycopg
 import pytest
 
 from app.config import TEST_DATABASE
+from app.security import hash_session_token
 
 
 class TestDatabaseSafetyError(RuntimeError):
@@ -15,6 +16,10 @@ class NativeTestDatabase:
         self.settings = settings
         self._connect = connect
         self._emails = set()
+        self._users = {}
+        self._sessions = {}
+        self.cleanup_verified = False
+        self.cleanup_counts = (0, 0)
 
     def connect(self, settings, *, read_only=False):
         if settings.database != TEST_DATABASE:
@@ -49,8 +54,26 @@ class NativeTestDatabase:
                 connection.execute(
                     "SELECT id, email, password_hash, created_at FROM public.users WHERE FALSE"
                 )
+                self._check_session_schema(connection)
         except psycopg.Error:
-            pytest.fail("Prepared users schema could not be verified; schema was not changed", pytrace=False)
+            pytest.fail("Prepared users/session schema could not be verified; schema was not changed", pytrace=False)
+
+    def _check_session_schema(self, connection):
+        connection.execute(
+            "SELECT id, user_id, token_hash, created_at, expires_at, revoked_at "
+            "FROM public.user_sessions WHERE FALSE"
+        )
+        constraints = connection.execute(
+            "SELECT contype, pg_get_constraintdef(oid) FROM pg_catalog.pg_constraint "
+            "WHERE conrelid = to_regclass(%s)", ("public.user_sessions",),
+        ).fetchall()
+        required = {
+            ("p", "PRIMARY KEY (id)"), ("u", "UNIQUE (token_hash)"),
+            ("f", "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"),
+            ("c", "CHECK ((expires_at > created_at))"),
+        }
+        if not required.issubset(set(constraints)):
+            pytest.fail("Prepared session constraints are required; schema was not changed", pytrace=False)
 
     def reserve_email(self):
         email = f"gg-reg-{uuid4().hex}@example.com"
@@ -61,29 +84,89 @@ class NativeTestDatabase:
         if exists is not None:
             pytest.fail("Synthetic fixture collision; existing record was not claimed", pytrace=False)
         self._emails.add(email)
+        self.cleanup_verified = False
         return email
+
+    def track_user(self, user_id, email):
+        if email not in self._emails:
+            raise TestDatabaseSafetyError("Only reserved synthetic users may be tracked")
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT id FROM public.users WHERE id = %s AND email = %s", (user_id, email)
+            ).fetchone()
+        if row != (user_id,):
+            raise TestDatabaseSafetyError("Synthetic user ownership could not be verified")
+        self._users[user_id] = email
+
+    def track_session(self, session_id, user_id):
+        if user_id not in self._users:
+            raise TestDatabaseSafetyError("Session owner must be a tracked synthetic user")
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT id, token_hash FROM public.user_sessions WHERE id = %s AND user_id = %s",
+                (session_id, user_id),
+            ).fetchone()
+        if row is None:
+            raise TestDatabaseSafetyError("Synthetic session ownership could not be verified")
+        self._sessions[row[0]] = (user_id, row[1])
+
+    def require_reserved_session(self, token):
+        if token is None:
+            return
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT u.id, u.email FROM public.user_sessions AS s "
+                "JOIN public.users AS u ON u.id = s.user_id WHERE s.token_hash = %s",
+                (hash_session_token(token),),
+            ).fetchone()
+        if row is not None:
+            if row[1] not in self._emails:
+                raise TestDatabaseSafetyError("Only reserved synthetic sessions are permitted")
+            self._users[row[0]] = row[1]
+
+    def _recover_and_delete_owned(self, connection):
+        for email in self._emails:
+            row = connection.execute(
+                "SELECT id FROM public.users WHERE email = %s", (email,)
+            ).fetchone()
+            if row is not None:
+                self._users[row[0]] = email
+                sessions = connection.execute(
+                    "SELECT id, token_hash FROM public.user_sessions WHERE user_id = %s", (row[0],)
+                ).fetchall()
+                for session_id, token_hash in sessions:
+                    self._sessions[session_id] = (row[0], token_hash)
+        for session_id, (user_id, token_hash) in self._sessions.items():
+            connection.execute(
+                "DELETE FROM public.user_sessions WHERE id = %s AND user_id = %s AND token_hash = %s",
+                (session_id, user_id, token_hash),
+            )
+        for user_id, email in self._users.items():
+            connection.execute(
+                "DELETE FROM public.users WHERE id = %s AND email = %s", (user_id, email)
+            )
 
     def cleanup(self):
         if not self._emails:
             return
         try:
             with self.connect(self.settings, read_only=False) as connection:
-                for email in self._emails:
-                    row = connection.execute(
-                        "SELECT id FROM public.users WHERE email = %s", (email,)
-                    ).fetchone()
-                    if row is not None:
-                        connection.execute(
-                            "DELETE FROM public.users WHERE id = %s AND email = %s",
-                            (row[0], email),
-                        )
+                self._recover_and_delete_owned(connection)
             with self.connect(self.settings, read_only=True) as connection:
                 remaining = connection.execute(
                     "SELECT id FROM public.users WHERE email = ANY(%s)",
                     (list(self._emails),),
                 ).fetchall()
-                if remaining:
+                sessions = connection.execute(
+                    "SELECT id FROM public.user_sessions WHERE id = ANY(%s) OR user_id = ANY(%s)",
+                    (list(self._sessions), list(self._users)),
+                ).fetchall()
+                if remaining or sessions:
                     pytest.fail("Synthetic cleanup verification failed; stop native testing", pytrace=False)
         except psycopg.Error:
             pytest.fail("Synthetic cleanup failed; stop native testing and resolve tracked fixtures", pytrace=False)
+        self.cleanup_counts = (len(self._users), len(self._sessions))
+        self.cleanup_verified = True
         self._emails.clear()
+        self._users.clear()
+        self._sessions.clear()

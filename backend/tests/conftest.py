@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import database
-from app.config import get_settings, load_settings
+from app.config import AuthSettings, get_auth_settings, get_settings, load_settings
 from app.main import create_app
 from database_support import NativeTestDatabase
 
@@ -30,6 +30,12 @@ def native_database(request, monkeypatch):
     def cleanup():
         try:
             native.cleanup()
+            if native.cleanup_verified:
+                users, sessions = native.cleanup_counts
+                print(
+                    f"Verified exact cleanup: {users} synthetic users and {sessions} tracked "
+                    "sessions absent from garageguide_app_test."
+                )
         except BaseException:
             request.session.shouldstop = "Native cleanup failed; resolve tracked fixtures before continuing"
             raise
@@ -50,5 +56,8 @@ def test_settings():
 def client(test_settings):
     application = create_app()
     application.dependency_overrides[get_settings] = lambda: test_settings
-    with TestClient(application) as test_client:
+    application.dependency_overrides[get_auth_settings] = lambda: AuthSettings(
+        "testing", False, "http://127.0.0.1:8000"
+    )
+    with TestClient(application, base_url="http://127.0.0.1:8000") as test_client:
         yield test_client
