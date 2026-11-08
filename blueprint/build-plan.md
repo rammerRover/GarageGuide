@@ -14,7 +14,7 @@ Plan must not be introduced during these feature loops.
 - [x] 1. **Register a user account.** Validate email and password input, prevent
   duplicate accounts, hash the password, and give the user clear success and
   error results without exposing sensitive details.
-- [ ] 2. **Sign in, sign out, and protect private sessions.** Verify credentials,
+- [x] 2. **Sign in, sign out, and protect private sessions.** Verify credentials,
   create expiring and revocable sessions, protect private routes, and confirm
   that one user cannot access another user's records.
 - [ ] 3. **Create and list vehicles in a digital garage.** Allow an authenticated
