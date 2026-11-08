@@ -140,11 +140,15 @@ state. Success, other failures, and leaving the page clear them.
 `/login` uses the same credential rules and ten-second/no-replay request bound.
 `/account` displays only the validated public email and session deadline, with a
 current-browser sign-out control. Session restoration uses GET /api/auth/session
-on startup; protected navigation, visibility return, and the known expiry boundary
-recheck before displaying private content. Loading/unavailable states gate that
-content. There is no periodic keepalive. A 401 clears private React state; a
-network/503 failure permits deliberate retry without claiming logout. Stale
-responses cannot restore an old identity after navigation or sign-out.
+on startup. At the known local session deadline, React clears the public account
+identity and enters the session-ended flow without calling /api/auth/session.
+The expiration timer does not poll, retry, or extend idle activity. Later
+deliberate protected navigation, refresh, visibility return, or selecting Retry
+may request server validation. PostgreSQL remains authoritative for the actual
+idle and absolute session deadlines. Loading/unavailable states gate private
+content. A 401 clears private React state; a network/503 failure permits
+deliberate retry without claiming logout. Stale responses cannot restore an old
+identity after navigation or sign-out.
 
 Only validated public user data, expiry, and UI state live in React memory.
 HttpOnly cookies transport tokens without JavaScript reading them. Authentication
