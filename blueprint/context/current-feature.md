@@ -5,7 +5,7 @@
 **Branch:** feature/sign-in-sign-out-and-protect-private-sessions
 **Archive path:** blueprint/history/features/02-sign-in-sign-out-and-protect-private-sessions.md
 **Status:** verified
-**Independent-review gate:** required; automated repair checks and user-performed development/preview browser verification are recorded. The original changes-requested receipt is preserved as historical evidence and is stale for these repairs. Repair checkpoint approval and a new passing independent receipt remain pending; verified does not mean reviewer closure or feature completion.
+**Independent-review gate:** required; the latest receipt for 4250092b58e8a73048e879fe00e9f4025cfd5d9b requested changes, leaving F-01 open and independently closing F-02. That receipt and ledger remain unchanged as historical evidence and are stale for the new code/specification. Automated checks and the user's November 7, 2026 Chrome development/preview observations support the encoded-path implementation. Checkpoint approval and a fresh independent audit remain pending. F-01 stays open; verified does not mean finding closure or feature completion.
 
 ## Goal
 
@@ -171,6 +171,39 @@ creation, commit, merge, or push until the appropriate subsequent approval.
   for this follow-up; do not inherit those details from the original report.
   See AUTHENTICATION_STATUS.md for the separate evidence record. Both findings
   are builder-marked fixed pending fresh independent review, not closed.
+
+- [x] 7. Repair only the remaining F-01 encoded-path classification defect.
+  Share the actual Account route descriptor between App.jsx and sessionState.js.
+  Classify protected navigation with React Router's public matchRoutes API so
+  decoding, case and end-of-path semantics agree with route rendering. Do not
+  implement a custom decoder or add routes. Cover literal and encoded variants,
+  unrelated/malformed paths, direct load/refresh, loading/401/unavailable states,
+  Back/Forward and stale results. Preserve the independently closed F-02 behavior.
+  **Automated evidence (November 7, 2026):** 108 focused session tests, 170 complete
+  frontend tests and all 360 database-free backend tests passed; 87 native cases
+  were deselected. Frontend lint/build and pip check passed. The production build
+  passed on the approved outside-sandbox retry after the known esbuild access
+  denial. Existing Node mock-timer and Starlette/AnyIO warnings remain. The new
+  encoded navigation/history cases first reproduced the gap before the matcher
+  correction. No backend, database, schema or dependency changes were made; no
+  PostgreSQL connection or native rerun occurred.
+  **User-performed browser evidence:** on November 7, 2026, Chrome 156.0.8078.73
+  in Vite development and production preview validated /account, /account/,
+  /ACCOUNT, /%61ccount, /acc%6Funt and /%41CCOUNT before displaying identity.
+  Direct loads, refresh and Back/Forward passed; valid session checks returned
+  200. Loading gated identity; rapid navigation canceled stale work. Simulated
+  rejection/unavailability stayed safe, and restored real fetch plus Try again
+  restored the valid session only after a fresh 200. Unrelated paths showed no
+  Account content. Direct malformed HTTP paths produced Vite's URI malformed
+  rejection before React loaded, a server-boundary observation only. Deliberate
+  history checks are user activity, not expiry polling. F-02 application code
+  was unchanged and no full 30-minute real idle observation was repeated. The
+  user reported: `Verified cleanup: all reserved synthetic accounts and sessions are absent.`
+  See AUTHENTICATION_STATUS.md for the separately attributed evidence and limits.
+  **Pending:** explicit approval of the final F-01 repair checkpoint, then fresh
+  independent review. F-01 remains open, and the previous receipt/findings are
+  preserved unchanged. No staging, commit/amend, audit, completion, landing or
+  push is authorized by this documentation/checkpoint-preparation pass.
 
 ## Files / areas
 

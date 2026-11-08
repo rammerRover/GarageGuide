@@ -2,17 +2,18 @@
 
 Feature 2: Sign in, sign out, and protect private sessions.
 
-Current checkpoint: the original implementation was committed as
-`fefa4b242047a0a18c02228963db3344ef2ce4fa`. Its independent audit requested
-changes for F-01 and F-02. The approved frontend repairs passed automated checks
-and separate user-performed focused browser verification in development and
-production preview. The active spec is verified for a proposed repair checkpoint.
-Both P1 findings are builder-marked fixed pending fresh independent review,
-not reviewer-closed. The original changes-requested receipt is preserved and is
-stale for the repairs. Nothing from the repair is staged or committed; explicit
-checkpoint approval and a new passing `$audit independent current` receipt remain
-required. Historical sections below retain their original evidence boundaries;
-the repair follow-up at the end is the current status. No `$complete` has run.
+Current checkpoint: `4250092b58e8a73048e879fe00e9f4025cfd5d9b` contains the
+first F-01/F-02 repair. Its fresh audit independently closed F-02 but left F-01
+open for encoded account paths. The subsequent F-01-only correction passed
+automated checks and the user's November 7, 2026 Chrome 156.0.8078.73 development
+and production-preview observations. The active specification is verified for
+the proposed final F-01 repair checkpoint, not independently approved. F-01
+remains open; the previous receipt and ledger remain unchanged and historical.
+The receipt is stale for the new code/specification. No final F-01 repair is
+staged or committed. Explicit checkpoint approval and a fresh passing
+`$audit independent current` receipt remain required. Historical sections retain
+their original evidence boundaries; the final F-01 follow-up at the end is the
+current status. No `$complete` has run.
 
 ## Build Step 1 — November 6, 2026
 
@@ -836,3 +837,134 @@ backend code, database file, dependency, build output or unrelated file is
 included. After review, explicit checkpoint approval is required before staging
 and committing this exact candidate. A new independent current review is a
 later gate and must not be replaced by these builder/user verification claims.
+
+## Final F-01 encoded-path repair: November 7, 2026 browser follow-up
+
+This section records the user's focused report after the remaining encoded-path
+repair. It supersedes pending-browser status for this correction only. Earlier
+automated/native results, browser reports and independent findings retain their
+own targets and classifications. No independent audit was run in this recording
+pass, and no application code was changed while recording these observations.
+
+### Previous independent audit remains historical
+
+Reviewed checkpoint: `4250092b58e8a73048e879fe00e9f4025cfd5d9b`.
+Reviewed specification SHA-256:
+`e050b64b673f684f61709ad2365670ea4ca86c64e7a8c6d7bd976129e4127aad`.
+Reviewer: Codex gpt-6.1-sol, fresh isolated subagent. Verdict: changes-requested.
+F-01 stayed open because encoded routes bypassed navigation revalidation; F-02
+was independently closed because local expiry could no longer renew idle time.
+
+The current review.md and findings.md are preserved byte-for-byte, including
+the original explanations, repair notes and independent re-review evidence:
+
+- Receipt raw SHA-256: `1c9615addaf7fe49fff8b98b2e10fec7609a8d12cbd6cf94223b27fcb56cc882`.
+- Findings raw SHA-256: `26021c0c3cb6f39872fb882b4dd54306b8a1252a1edc9604fd482831e2645256`.
+
+The receipt is stale for the new implementation/specification. F-01 remains
+open until a fresh independent audit confirms this repair. The user's browser
+report does not close the finding. F-02's recorded independent closure remains
+historical evidence; its application code was unchanged in this correction.
+
+### Existing automated results, not rerun for this documentation pass
+
+The November 7 encoded-path repair introduced a shared Account route descriptor
+used by App.jsx and sessionState.js. Public matchRoutes now supplies the same
+decoding and matching semantics as route rendering, without a custom decoder.
+Encoded navigation/history regressions first reproduced the defect with the old
+matcher, then passed with the correction.
+
+| Previously run repair check | Actual result |
+| --- | --- |
+| `node --test frontend/tests/sessionState.test.js` | 108 passed, zero failures. |
+| `node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js` | 170 passed; zero failures, cancellations, skips or todo cases. |
+| `npm --prefix frontend run lint` | Passed. |
+| `npm --prefix frontend run build` | Passed; 51 modules. Approved outside-sandbox retry after the known esbuild parent-directory denial. |
+| `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests -m "not integration" -p no:cacheprovider` | 360 passed, 87 native cases deselected. |
+| `backend/.venv/Scripts/python.exe -m pip check` | No broken requirements found. |
+| Scoped whitespace checks, including new accountRoute.js | Passed; rechecked during final checkpoint preparation. |
+
+Node's experimental mock-timer warning and the existing Starlette/AnyIO
+deprecation warning remain. Backend application/tests, authoritative SQL and
+dependency manifests were not changed by this repair. No PostgreSQL connection,
+native test or agent cleanup was run in the repair or this documentation pass.
+Earlier guarded native evidence remains separate and is not relabeled as new.
+
+### User-performed browser observations
+
+Date: November 7, 2026. Browser: Google Chrome 156.0.8078.73. Environments:
+Vite development and production preview. The agent did not perform or observe
+these browser interactions; the following results are the user's report.
+
+| User-reported check | Observation |
+| --- | --- |
+| `/account`, `/account/`, `/ACCOUNT`, `/%61ccount`, `/acc%6Funt`, `/%41CCOUNT` | All required session validation before displaying Account identity. |
+| Encoded direct loads, refresh and Back/Forward | Worked as expected. |
+| Valid protected navigation | `/api/auth/session` returned 200; identity stayed hidden until validation completed. |
+| Rapid navigation and late responses | Stale session work was canceled; stale responses did not restore outdated content. |
+| Simulated rejected sessions | Private content stayed hidden and entered the login/session-ended flow. |
+| Simulated unavailable sessions | Account stayed gated with deliberate retry. |
+| Restored real fetch and Try again | Valid session restored only after a fresh 200 response. |
+| `/accounting`, `/account/settings` and encoded unrelated paths | Did not display Account content. |
+| Direct malformed HTTP paths | Vite rejected them with URI malformed before React loaded; GarageGuide worked normally afterward. |
+| Deliberate Back/Forward session checks | Expected user-driven activity, separate from prohibited expiry polling. |
+| Guarded backend cleanup | Exact reserved synthetic account/session absence message observed. |
+
+The user reported:
+
+```text
+Verified cleanup: all reserved synthetic accounts and sessions are absent.
+```
+
+The cleanup marker is user-performed browser-backend evidence, not a new agent
+SQL verification. Rejected/unavailable responses were simulations; restored
+real-fetch 200 recovery is reported separately. Vite's URI malformed rejection
+is a development/preview-server boundary observation, not React browser
+coverage for malformed paths. React matcher/store malformed-path coverage is
+automated only. No full 30-minute real idle-expiration observation was repeated
+for this focused F-01 report. Do not infer browser clock-skew, eight-hour expiry,
+new responsive/accessibility measurements or deployed HTTPS coverage here.
+
+### Proposed final F-01 checkpoint and unrelated local work
+
+Branch: `feature/sign-in-sign-out-and-protect-private-sessions`.
+Parent HEAD: `4250092b58e8a73048e879fe00e9f4025cfd5d9b`.
+Proposed message: `fix: align protected navigation with router decoding`.
+
+Exactly nine files are proposed (eight modified tracked files and one new file):
+
+| File | Purpose |
+| --- | --- |
+| `frontend/src/accountRoute.js` (new) | The actual Account route descriptor shared by rendering and classification. |
+| `frontend/src/App.jsx` | Render Account from that shared descriptor. |
+| `frontend/src/sessionState.js` | Use public matchRoutes with the shared descriptor for decoding-consistent navigation checks. |
+| `frontend/tests/sessionState.test.js` | Encoded/literal route, refresh/history/failure/stale-response and malformed-path regressions. |
+| `blueprint/context/current-feature.md` | Verified implementation/browser-progress record with F-01 still open and fresh audit pending. |
+| `docs/verification/BROWSER_CHECKS.md` | Record attributed observations and the malformed-server/idle-expiration limitations; retain the repeatable guide. |
+| `docs/verification/AUTHENTICATION_STATUS.md` | Separate final F-01 automated, user-browser, simulated and historical audit/native evidence. |
+| `blueprint/context/review.md` | Preserve the unchanged previous changes-requested receipt in checkpoint history. |
+| `blueprint/context/findings.md` | Preserve the unchanged ledger with F-01 open and F-02 independently closed. |
+
+The two audit records already differed from HEAD before this preparation;
+including their exact existing bytes preserves the previous review in history.
+The original and first-repair proposals remain untouched. New ignored artifacts:
+
+- blueprint/.state/staging/feature-2-final-f01-checkpoint-proposal.json
+- blueprint/.state/staging/feature-2-final-f01-review-packet.md
+- blueprint/.state/staging/feature-2-final-f01-review.diff
+
+Each proposed file has a frozen raw SHA-256 and Git-normalized blob hash in the
+manifest, along with the specification hash, parent and predicted tree. The
+predicted tree is HEAD plus only these nine files, computed without staging.
+
+An unrelated local edit in backend/prepapp.txt was discovered and left untouched.
+It is explicitly excluded from this checkpoint and its review diff. It must be
+resolved by a separate user decision before a later independent audit can meet
+its clean-target rule. Do not silently stage, stash, discard or commit it. Its
+presence does not turn it into an approved repair file.
+
+The index remains empty. Private backend/.env and backend/.env.test remain
+ignored, untracked and unstaged; no dependency, virtual environment, node_modules,
+build output, cache, dump or schema is proposed. Nothing has been staged,
+committed/amended, audited, completed, merged or pushed in this pass. Explicit
+approval is still required before staging or committing the exact candidate.

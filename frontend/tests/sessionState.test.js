@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createMemoryRouter, matchRoutes } from 'react-router-dom'
 import { createSessionStore } from '../src/sessionState.js'
+import { accountRoute } from '../src/accountRoute.js'
 
 const now = Date.parse('2026-11-06T12:00:00Z')
 const session = (id = 1) => ({
@@ -228,8 +229,9 @@ test('a confirmed public guest response clears an earlier unavailable notice', a
   assert.equal(store.getSnapshot().notice, '')
 })
 
-const accountPaths = ['/account', '/account/', '/ACCOUNT', '/AcCoUnT/']
-const routes = [{ path: '/', id: 'public' }, { path: '/account', id: 'account' }]
+const encodedAccountPaths = ['/%61ccount', '/acc%6Funt', '/%41CCOUNT', '/acc%6Funt/']
+const accountPaths = ['/account', '/account/', '/ACCOUNT', '/AcCoUnT/', ...encodedAccountPaths]
+const routes = [{ path: '/', id: 'public' }, accountRoute]
 
 for (const pathname of accountPaths) {
   for (const kind of ['success', 'guest', 'unavailable']) {
@@ -253,7 +255,7 @@ for (const pathname of accountPaths) {
   }
 }
 
-for (const pathname of ['/accounting', '/accounts', '/account/settings', '/', '/login']) {
+for (const pathname of ['/accounting', '/accounts', '/account/settings', '/%61ccounting', '/%61ccount/settings', '/account%2Fsettings', '/', '/login']) {
   test(`unrelated path ${pathname} does not trigger protected navigation`, async () => {
     const matched = matchRoutes(routes, pathname)
     assert.notEqual(matched?.at(-1).route.id, 'account')
@@ -266,25 +268,63 @@ for (const pathname of ['/accounting', '/accounts', '/account/settings', '/', '/
   })
 }
 
-for (const kind of ['guest', 'unavailable']) {
-  test(`late success cannot undo ${kind} on a different account-route variant`, async () => {
-    const old = deferred()
-    const next = deferred()
+for (const pathname of ['/account/', ...encodedAccountPaths]) {
+  for (const kind of ['guest', 'unavailable']) {
+    test(`late success cannot undo ${kind} after navigation from ${pathname}`, async () => {
+      const old = deferred()
+      const next = deferred()
+      let calls = 0
+      const store = fixture({ getSession: () => {
+        calls += 1
+        return calls === 1 ? Promise.resolve(success(1)) : calls === 2 ? old.promise : next.promise
+      } })
+      await store.enter('public', '/')
+      const previous = store.enter('first', pathname)
+      const current = store.enter('second', '/%41CCOUNT')
+      next.resolve({ kind })
+      await current
+      old.resolve(success(2))
+      assert.equal((await previous).kind, 'cancelled')
+      assert.equal(store.getSnapshot().status, kind)
+      assert.equal(store.getSnapshot().checkedFor, 'second')
+      assert.notEqual(store.getSnapshot().user?.id, 2)
+    })
+  }
+}
+
+for (const pathname of encodedAccountPaths) {
+  for (const kind of ['success', 'guest', 'unavailable']) {
+    test(`direct load and refresh at ${pathname} gate identity until ${kind} is confirmed`, async () => {
+      for (const key of ['direct', 'refresh']) {
+        const router = createMemoryRouter(routes, { initialEntries: [pathname] })
+        assert.equal(router.state.matches.at(-1).route.id, accountRoute.id)
+        const reply = deferred()
+        const store = fixture({ getSession: () => reply.promise })
+        const checking = store.enter(key, router.state.location.pathname)
+        assert.equal(store.getSnapshot().status, 'loading')
+        assert.equal(store.getSnapshot().checkedFor, null)
+        assert.equal(store.getSnapshot().user, null)
+        reply.resolve(kind === 'success' ? success(1) : { kind })
+        await checking
+        assert.equal(store.getSnapshot().status, kind === 'success' ? 'authenticated' : kind)
+        assert.equal(store.getSnapshot().user?.id ?? null, kind === 'success' ? 1 : null)
+        store.dispose()
+        router.dispose()
+      }
+    })
+  }
+}
+
+for (const pathname of ['/%', '/acc%ount', '/account%', '/%E0%A4%A', '/acc%6Funt/%ZZ', '/%C0%AFaccount']) {
+  test(`malformed encoded path ${pathname} is safe and does not match Account`, async (t) => {
+    t.mock.method(console, 'warn', () => {})
+    assert.equal(matchRoutes(routes, { pathname }), null)
     let calls = 0
-    const store = fixture({ getSession: () => {
-      calls += 1
-      return calls === 1 ? Promise.resolve(success(1)) : calls === 2 ? old.promise : next.promise
-    } })
-    await store.enter('public', '/')
-    const previous = store.enter('first', '/account/')
-    const current = store.enter('second', '/ACCOUNT')
-    next.resolve({ kind })
-    await current
-    old.resolve(success(2))
-    assert.equal((await previous).kind, 'cancelled')
-    assert.equal(store.getSnapshot().status, kind)
-    assert.equal(store.getSnapshot().checkedFor, 'second')
-    assert.notEqual(store.getSnapshot().user?.id, 2)
+    const store = fixture({ getSession: async () => { calls += 1; return success(1) } })
+    await store.enter('startup', '/')
+    await assert.doesNotReject(store.enter('malformed', pathname))
+    assert.equal(calls, 1)
+    assert.equal(store.getSnapshot().checkedFor, 'malformed')
   })
 }
 

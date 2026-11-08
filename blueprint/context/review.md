@@ -1,23 +1,23 @@
 # Independent Review
 
 **Status:** changes-requested
-**Target commit:** fefa4b242047a0a18c02228963db3344ef2ce4fa
+**Target commit:** 4250092b58e8a73048e879fe00e9f4025cfd5d9b
 **Base commit:** bd763da52ba52c07f3fad3200cccade663dbe756
 **Base ref:** refs/remotes/origin/main
-**Spec hash:** 993c246ddf15d9c85b53b0d451dc630ebf89b6279862f88d3c1e37fd01cb22b4
+**Spec hash:** e050b64b673f684f61709ad2365670ea4ca86c64e7a8c6d7bd976129e4127aad
 **Prepared by:** codex
 **Builder model:** unknown (runtime did not expose exact model)
 **Requested reviewer:** codex
 **Requested model:** gpt-6.1-sol
 **Requested execution:** automatic
-**Requested at:** 2026-11-07T04:34:22.357061+00:00
+**Requested at:** 2026-11-07T05:13:30.701101+00:00
 **Workflow:** regular
 **Check required:** no
 **Reviewer adapter:** codex
 **Reviewer model:** gpt-6.1-sol
 **Reviewer context:** fresh subagent
 **Actual execution:** automatic
-**Reviewed at:** 2026-11-07T04:41:29.5092054+00:00
+**Reviewed at:** 2026-11-07T23:17:29.5423464+00:00
 **Scope:** current
 **Lenses:** quality, security, performance, tests
 **Verdict:** changes-requested
@@ -25,54 +25,60 @@
 
 ## Handoff
 
-Review the active spec and the complete bd763da52ba52c07f3fad3200cccade663dbe756..fefa4b242047a0a18c02228963db3344ef2ce4fa delta in a fresh
-isolated subagent without the builder conversation. Run all Audit lenses from scratch:
-quality, security, performance, tests, including correctness, transactions,
-concurrency, privacy, frontend session state, accessibility and test coverage.
-Check is configured manual and is not separately required. Reuse recorded native
-PostgreSQL and user-performed browser evidence only where the local workflow permits,
-explicitly distinguishing reviewer-run checks, reused observations and simulations.
-Do not edit product code or the frozen specification/verification record, accept
-findings, commit, stage, merge, push, deploy, install dependencies, or change schema.
-Do not use the existing findings or builder conclusions as the review scope.
+Review the active spec and the complete bd763da52ba52c07f3fad3200cccade663dbe756..4250092b58e8a73048e879fe00e9f4025cfd5d9b delta in a fresh
+isolated subagent without the builder conversation. Run all four Audit lenses
+from scratch using the installed project-local Audit skill and review contract.
+The original changes-requested receipt is preserved in this checkpoint's
+review.md blob; findings are context, never the review scope. Independently
+re-examine F-01/F-02 and close them only if actual review evidence supports it.
+Do not edit product code, tests, spec, verification records or configuration,
+accept findings, stage, commit, complete, merge, push or deploy. Write only the
+findings ledger and completed receipt, plus prescribed ignored activity.
+Run the required database-free checks. No PostgreSQL connection or native rerun
+is authorized for this frontend-only repair; reuse clearly identified recorded
+native evidence and user-performed original/focused browser reports where
+adequate. Do not start a server/browser or claim unperformed observations.
 
 ## Commands
 
-- `git rev-parse HEAD`, `git symbolic-ref refs/remotes/origin/HEAD`, `git merge-base refs/remotes/origin/main HEAD`, `git branch --show-current`, `git status --short`, tracked-spec lookup and raw SHA-256 checks: passed the request bindings and allowed-differences checks before review. Rechecked at completion.
-- `git diff --stat bd763da52ba52c07f3fad3200cccade663dbe756 HEAD` and complete range file inventory: inspected all 60 changed paths, including inherited registration history and local notes.
-- `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests -m "not integration" -p no:cacheprovider`: passed, 360 tests, 87 native cases deselected; one existing Starlette/AnyIO deprecation warning.
+- `git rev-parse HEAD`, `git symbolic-ref refs/remotes/origin/HEAD`, `git merge-base refs/remotes/origin/main HEAD`, `git branch --show-current`, `git status --short --untracked-files=all`, index/diff inspection and raw spec SHA-256: passed request bindings and permitted-difference checks; rechecked before recording the verdict.
+- `git diff --stat bd763da52ba52c07f3fad3200cccade663dbe756..4250092b58e8a73048e879fe00e9f4025cfd5d9b` and full name/status inventory: inspected the complete 62-path delta, with review/findings treated as historical evidence rather than code scope.
+- `node --test frontend/tests/sessionState.test.js`: passed, 63 tests, zero failures/cancellations/skips/todo.
+- `node --test frontend/tests/*.test.js`: passed, all 125 frontend tests, zero failures/cancellations/skips/todo. Existing fnm Node 22.23.4 was prepended to process-local PATH; MockTimers emits its experimental warning.
+- `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests -m "not integration" -p no:cacheprovider`: passed, 360 tests, 87 native cases deselected, one existing Starlette/AnyIO deprecation warning; Python 3.13.17, pytest 8.3.5.
 - `backend/.venv/Scripts/python.exe -m pip check`: passed, no broken requirements.
-- `node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js`: passed, 85 tests; no failures, skips, cancellations or todo cases. Used existing fnm Node 22.23.4.
 - `npm --prefix frontend run lint`: passed.
-- `npm --prefix frontend run build`: initial sandbox attempt failed because esbuild could not read parent directories; approved escalated retry passed, 50 modules transformed, JavaScript 247.81 kB (gzip 78.87 kB), CSS 2.48 kB (gzip 1.06 kB).
-- `backend/.venv/Scripts/python.exe -m pytest -c backend/pyproject.toml backend/tests -m integration -p no:cacheprovider --capture=tee-sys --maxfail=1`, with explicit `RUN_DB_TESTS=1`: passed, 87 tests, 360 database-free cases deselected, one existing warning, 123.63 seconds. Flag removed afterward. Output was buffered and filtered to expose only the exit code, counts and safe exact-cleanup marker.
-- Reviewer Node stdin route reproduction: installed router `matchRoutes` accepted `/account/` and `/ACCOUNT`; actual session-store navigation performed no second session request and left the private gate open for cached identity. API rejection was simulated. Confirmed F-01.
-- Reviewer Node stdin clock-skew reproduction: actual session store plus the provider's exact delay expression and simulated server lifetime rules remained authenticated after 75 server minutes without user activity, with idle expiry advanced to minute 105. Confirmed F-02; this is simulated timing evidence.
-- `git diff bd763da52ba52c07f3fad3200cccade663dbe756 HEAD --check` and `git diff --check`: passed; expected LF-to-CRLF notice only.
-- Targeted skipped/focused/placeholder-test search: found only intentional native opt-in skips. Native suite ran with no skipped cases; no focused, xfail or placeholder cases were found.
+- `npm --prefix frontend run build`: first sandbox attempt failed because esbuild could not read parent directories; prescribed approved escalated retry passed with Vite 6.4.5, 50 modules, JS 247.95 kB (gzip 78.89 kB), CSS 2.48 kB (gzip 1.06 kB).
+- Reviewer Node stdin reproduction with installed `matchRoutes`, `matchPath`, actual `createSessionStore` and private-gate predicates: confirmed F-01 remains reachable for /%61ccount, /acc%6Funt and /%41CCOUNT. Each matched Account, was classified public, made no second session request and allowed cached identity despite the next simulated result being guest. This is simulated API logic evidence, not browser evidence.
+- `git diff --name-only fefa4b242047a0a18c02228963db3344ef2ce4fa..HEAD -- backend`: empty; backend product/tests are unchanged from the original independently reviewed implementation.
+- `git diff --check bd763da52ba52c07f3fad3200cccade663dbe756..4250092b58e8a73048e879fe00e9f4025cfd5d9b` and `git diff --check`: passed; expected LF-to-CRLF notice only. Rechecked after receipt/ledger edits.
+- Targeted skipped/focused/placeholder-test search: only intentional native opt-in skips found; no focused, xfail or placeholder tests. No installed typecheck, combined Verify, Browser tests, security-scanner or performance/profiling command exists.
+- Activity helper: initial Node lookup failed before inspection; retry with supplied fnm PATH succeeded. Only prescribed ignored activity was written beyond the two evidence files.
 
 ## Evidence
 
-- This generic Codex child began with the project-local review handoff, without the builder transcript. Runtime-selected identity is Codex `gpt-6.1-sol`; execution is automatic in a fresh subagent. Prior findings and historical receipts did not define the review scope.
-- Independently verified exact target `fefa4b242047a0a18c02228963db3344ef2ce4fa`, permitted locally recorded remote-default base ref `refs/remotes/origin/main`, and re-derived merge base `bd763da52ba52c07f3fad3200cccade663dbe756`. The work branch is `feature/sign-in-sign-out-and-protect-private-sessions`. The tracked active spec's exact raw SHA-256 matches the request; all five steps are checked and status is verified. No ignored-spec snapshot is needed.
-- Reviewed the complete 60-file merge-base-to-target delta across all four lenses, including inherited Feature 1 work and local `.gitignore`/`backend/prepapp.txt` notes. Covered all changed backend application modules, environment examples, requirements, all added/changed tests and native/manual fixtures; all changed frontend components, API/credential/session helpers, styles, entry point, tests and both package manifests; README, build plan, coding standards, active spec, archived Feature 1 record and all changed verification documents. Review/findings were excluded as code inputs. Followed nearby health/settings/Vite/pytest and authoritative users/session SQL contracts. Dependencies, virtual environments, generated bundles/state, caches and private environment files were excluded from source review.
-- Checked shared email/NFC/code-point/password handling, one real/dummy Argon2 verification, token hashing and masked representations, fixed-message redaction, public-field whitelists, origin/JSON/CSRF gates, matching cookie attributes, loopback/production configuration, no-store, commit-before-success, rollback/close, parameter binding, post-lock database time, strict idle/absolute expiry, replacement/revocation, independent sessions and user-scoped cleanup. No additional confirmed backend finding arose.
-- Reviewer-run native checks used only test configuration through `load_settings(testing=True)`, effective name `garageguide_app_test`, and the verified existing `SELECT current_database()` guard as the first statement of each physical connection. Schema inspection was read-only. Fixtures reserved unique initially absent synthetic identities, registered finalizers before writes, recovered committed sessions by owned users, deleted only exact owned session/user identities, and checked absence on separate guarded connections. All 87 native cases and cleanup teardowns passed; a safe exact-cleanup marker was observed. No schema change, initialization, broad deletion, sequence reset or other-database write occurred.
-- Native tests independently exercised real hashing, committed session visibility, credential and identity isolation, both expiration limits/cap, rollback/recovery, current-browser replacement/logout, registration/health regressions, and two bounded row-lock tests using `pg_blocking_pids` to confirm waiting before revocation/expiry release. Deliberate exception injection, frozen boundary instants and lost-response tests remain simulated aspects of real native transactions.
-- Frontend review covered response validation, request bounds/cancellation/no replay, transient credentials/public state, stale-response ownership, navigation/visibility/document gates, logout failures, expiry timers, route matching, labels/error associations/focus/live feedback, keyboard controls and responsive styles. F-01 and F-02 violate protected-navigation and idle-lifetime requirements despite passing existing tests. Recommendations include missing route-integration and clock-skew regression coverage.
-- Reused browser evidence only: `docs/verification/AUTHENTICATION_STATUS.md` records the user's November 6, 2026 Chrome 156.0.8078.73 development/preview report covering authentication, history, independent browser sessions, registration/CSRF, failure feedback, password lifetime, accessibility, widths 375/768/1440, 200% zoom and the exact manual cleanup marker. This reviewer did not start a server/browser or independently observe these UI behaviors. Historical November 4 registration evidence remains historical. Unreported timed browser expiration/account switching and individually live versus simulated failure cases are not inferred.
-- Preserved current-feature.md and AUTHENTICATION_STATUS.md bytes. Only findings.md and review.md were edited, plus prescribed ignored activity. No repairs, finding acceptance, staging, commits, completion, landing, dependency installation, deployment or external communication occurred.
+- This generic Codex gpt-6.1-sol child began with only the project-local fresh-review handoff, without the builder conversation. Requested/actual execution is automatic with fresh subagent context. Existing findings and original receipt were historical context, not the review checklist.
+- Independently verified exact target 4250092b58e8a73048e879fe00e9f4025cfd5d9b, permitted locally recorded remote-default base refs/remotes/origin/main, and re-derived merge base bd763da52ba52c07f3fad3200cccade663dbe756. Work branch is feature/sign-in-sign-out-and-protect-private-sessions. The tracked active spec's raw hash is e050b64b673f684f61709ad2365670ea4ca86c64e7a8c6d7bd976129e4127aad; status is verified and all six steps are checked. No ignored-spec snapshot applies. Initial and final differences are restricted to review.md/findings.md.
+- All four lenses covered the full 62-path merge-base-to-target inventory, including inherited Feature 1 and existing local notes. Reviewed all changed backend application modules, public environment examples, requirements, backend tests and native/manual fixture support; all changed frontend components, helpers, styles, entry point, tests and package manifests; README, build plan, coding standards, frozen active spec, archived Feature 1 record and verification documents. Review/findings were excluded as product code. Followed nearby health/settings, Vite/pytest and authoritative users/session SQL contracts. Dependencies, generated bundles/state, caches, virtual environments and private environment files were excluded; only the installed router matching implementation was followed as necessary to confirm F-01.
+- Quality/security review checked shared email/NFC/password handling, typed/redacted credentials, one real/dummy Argon2 verification, token secrecy/hash-only storage, whitelisted public identity, fixed errors/logging, exact Origin/JSON/CSRF enforcement, matching cookie scope, fail-closed configuration, no-store, parameter binding, commit-before-success and rollback/close. Session validation locks before sampling database time, retains strict validity predicates and absolute cap, and derives actor identity from the database. Replacement/logout affect the presented session; cleanup is scoped to the authenticated user. No additional confirmed backend defect arose.
+- Performance/tests review covered bounded connection/query/request waits, short transactions, row-lock serialization, indexed session lookup, bounded frontend timer/work ownership, no automatic POST replay/polling, cancellation and stale-result rejection. Frontend route/UI review covered secret lifetime, loading/unavailable/guest gates, logout failures, visibility/document behavior, labels, field associations, focus/live feedback and responsive styles. The encoded-path reproduction confirms a coverage gap despite the passing route/history suite. No load or profiling measurement is claimed.
+- F-01 independently re-examined: literal trailing-slash/case handling is repaired, but raw matchPath omits the decoding performed by the actual router. Installed matchRoutesImpl calls decodePath before matching; the reviewed store does not. The same protected-navigation defect remains for encoded paths and stays P1 open. Backend authorization remains enforced.
+- F-02 independently re-examined and closed: watchExpiry now invokes only local endSession, which clears identity/deadline, cancels active work and discards deferred checks. It cannot renew server activity. Reviewer-run 63 focused cases include normal/ahead/behind clocks, equality, long idle periods without extra requests, explicit later navigation/visibility/retry, stale mutation/session results and obsolete deadlines. These fake-clock/API cases are automated simulations, not live expiration observations. No new defect in the expiry repair was confirmed.
+- Native-reused evidence only: AUTHENTICATION_STATUS.md Step 5 records 87 guarded native passes and exact cleanup, and the original receipt preserved in this target's committed review.md records the prior independent reviewer's separate 87-pass native rerun with verified cleanup. Native evidence covers real hashing/commits, isolation, rollback, expiry/cap and bounded two-connection lock tests. Fixture source review confirms test-only settings, first-statement current_database() guards on each physical connection, initially absent reserved users, finalizers before writes, exact owned-record deletion/recovery and separate absence verification. Backend bytes are unchanged by these frontend repairs. This reviewer opened no PostgreSQL connection and reran no native test or cleanup.
+- User-browser reused evidence only: the November 6 Chrome 156.0.8078.73 development/preview report in AUTHENTICATION_STATUS.md covers authentication/history, independent sessions, registration/CSRF, safe failures/password lifetime, accessibility, 375/768/1440 layouts, 200% zoom and manual cleanup. The later focused repair report separately covers /account, /account/, /ACCOUNT, unrelated /accounting, rejected/unavailable gates, local clearing without expiry requests, deliberate revalidation, late responses, logout/isolation, focus/layout and exact cleanup. No follow-up date/browser version/exact sizes or timing were supplied. Neither report supplies encoded-path evidence. These are user-performed observations; this reviewer did not start servers/browser or repeat them. Original November 4 registration evidence remains historical.
+- Original findings, builder repair notes and committed original receipt remain preserved. Only review.md/findings.md were changed, plus prescribed ignored activity. Source, tests, spec, AUTHENTICATION_STATUS.md and configuration were frozen. No repairs, acceptance, staging, commit, completion, archive, merge, push, deployment, installation or external communication occurred.
 
 ## Findings
 
-- F-01 [P1] open, `frontend/src/SessionContext.jsx:12`: account URL variants bypass navigation revalidation and can expose stale cached account identity. Match protected-route classification to the actual router and add regression coverage.
-- F-02 [P1] open, `frontend/src/SessionContext.jsx:36`: an ahead-of-server device clock makes automatic expiry requests repeatedly extend an idle session. Make deadline handling unable to renew idle activity indefinitely and add clock-skew regression coverage.
-- Both findings were added this pass. No findings were accepted, repaired, closed or invalidated. Suggested repair order: F-01, then F-02, followed by the full applicable checks and a newly approved checkpoint/full independent review. The current receipt cannot pass with these open P1 findings.
+- F-01 [P1] open, frontend/src/sessionState.js:134: encoded account paths bypass protected navigation revalidation. Reopened the existing finding with independently reproduced evidence while preserving its original explanation and builder notes. Use actual router decoding/matching or matched-route revalidation; add encoded-route rejection/unavailable/history cases and affected browser checks. This blocks a passing receipt and completion.
+- F-02 [P1] closed, frontend/src/sessionState.js:121: reviewed non-renewing local expiry clearing and stale-work cancellation, reran its fake-clock regressions and inspected separately attributed user observations. Original renewal-loop defect is gone; closure is specific to F-02.
+- No new finding ID, accepted finding or repair. Suggested repair order: remaining F-01, applicable regression/browser checks, then a newly approved checkpoint and full fresh independent review. Verdict is changes-requested despite all reviewer-run automated gates passing.
 
 ## Remaining risk
 
-- No reviewer browser/dev-server startup was authorized and no Browser tests command/component harness is configured. Reused user observations support UI behavior, but route-variant and clock-skew findings were reproduced through logic simulations, not live browser checks. Repair validation should include the affected protected navigation and idle-expiry browser flows.
-- Actual 30-minute/eight-hour browser expiration and individually labeled live outage evidence were not supplied; native strict-boundary/concurrency checks and simulated timing/failure checks are identified separately above. Additional browsers and assistive-technology-specific results are unavailable.
-- `npm --prefix frontend audit` was not run because network-backed auditing is outside the authorized scope. No current dependency-vulnerability scan is claimed; pip check validates dependency consistency only. No backend security scanner, typecheck, combined Verify, load test or profiling command is configured.
-- The initial sandbox build was unavailable due the known esbuild parent-directory restriction; the approved escalated retry succeeded. The existing Starlette/AnyIO deprecation warning remains.
-- Login rate limiting and deployed production HTTPS/proxy/cookie verification remain explicitly deferred requirements. The backend still enforces its absolute cap; neither finding establishes a backend authorization bypass.
+- Native integration command was not rerun under the explicit no-PostgreSQL boundary. Native confidence reuses the separately recorded 87-pass implementation/original-review results and cleanup; no new native pass is claimed.
+- No reviewer dev-server/browser startup was authorized, and no Browser tests or React component harness is configured. Browser/assistive-technology confidence reuses user observations. The remaining encoded-route defect is reproduced with actual router/store logic and a simulated API, not a live browser.
+- Actual timed 30-minute/eight-hour browser expiration, live clock-skew behavior, individually labeled live versus simulated failures, additional browsers and assistive-technology-specific observations are unavailable. Automated/native boundary and simulation categories above do not imply those observations.
+- `npm --prefix frontend audit` was not run because network-backed scans are outside scope. No current dependency-vulnerability scan is claimed; pip check establishes consistency only. No configured backend security scanner, typecheck, combined Verify, load/profiling or Browser tests command exists.
+- Initial sandbox build failed on the known esbuild parent-directory restriction; escalated retry passed. Existing Starlette/AnyIO deprecation and Node MockTimers experimental warnings remain.
+- Production login rate limiting and deployed HTTPS/proxy/cookie delivery remain explicitly deferred. No backend authorization bypass is established by F-01. Check was not required and was not run.

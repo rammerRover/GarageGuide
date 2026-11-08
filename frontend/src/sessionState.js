@@ -1,4 +1,5 @@
-import { matchPath } from 'react-router-dom'
+import { matchRoutes } from 'react-router-dom'
+import { accountRoute } from './accountRoute.js'
 import { getSession, loginAccount, logoutAccount } from './api.js'
 
 const unavailableMessage = "We couldn't confirm your session. Please try again."
@@ -131,7 +132,7 @@ export function createSessionStore(api = { getSession, loginAccount, logoutAccou
       const uncertain = Boolean(active)
       cancel()
       needsRecheck = false
-      route = { key, protected: Boolean(matchPath('/account', pathname)) }
+      route = { key, protected: Boolean(matchRoutes([accountRoute], { pathname })) }
       publish({ busy: null })
       if (route.protected || uncertain || state.status === 'loading') return recheck()
       publish({ checkedFor: key })

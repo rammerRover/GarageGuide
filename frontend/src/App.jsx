@@ -6,6 +6,7 @@ import Login from './Login.jsx'
 import Account from './Account.jsx'
 import RequireSession from './RequireSession.jsx'
 import SessionProvider from './SessionContext.jsx'
+import { accountRoute } from './accountRoute.js'
 
 const messages = {
   idle: 'Ready to check the connection.',
@@ -67,7 +68,7 @@ export default function App() {
             <Route path="/" element={<ConnectionScreen />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/account" element={<RequireSession><Account /></RequireSession>} />
+            <Route {...accountRoute} element={<RequireSession><Account /></RequireSession>} />
           </Routes>
         </main>
         <footer>GarageGuide · Project foundation</footer>

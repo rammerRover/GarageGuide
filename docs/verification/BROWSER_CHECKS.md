@@ -426,6 +426,72 @@ loop. Those are simulations, not browser evidence. Device clock skew can change
 when local UI hides; only PostgreSQL decides whether a session is valid. Do not
 claim these client tests prove a real 30-minute or eight-hour server boundary.
 
+### Encoded-path F-01 browser verification and reported observations
+
+The November 7 encoded-path correction uses matchRoutes with the same Account
+descriptor rendered by App.jsx. The user reported focused verification on
+November 7, 2026, using Chrome 156.0.8078.73 in both Vite development and production
+preview. All six listed account variants validated before identity appeared;
+encoded direct loads/refresh/history, valid 200 responses, stale-work cancellation,
+simulated rejection/unavailability and real-fetch retry recovery passed. Unrelated
+paths showed no Account content, and exact guarded cleanup was reported.
+Direct malformed HTTP paths were rejected by Vite with URI malformed before
+React loaded. That is server-boundary evidence, not React browser coverage.
+Deliberate history requests are user activity, not automatic expiry polling.
+The user did not repeat a full 30-minute real idle observation; F-02 application
+code was unchanged. See AUTHENTICATION_STATUS.md for the full attributed report.
+F-01 remains open pending a fresh independent audit. The guide below is retained
+for repeatability; its entire checklist is not a claim of observed coverage.
+
+Use the existing guarded backend restricted to garageguide_app_test and its
+reserved synthetic accounts. Repeat in development (127.0.0.1:5173) and production
+preview (127.0.0.1:4173), rebuilding preview first. Do not use the development
+database, export requests/cookies, log passwords or capture populated secrets.
+
+1. Sign in, then direct-load and refresh each of `/account`, `/account/`,
+   `/ACCOUNT`, `/%61ccount`, `/acc%6Funt` and `/%41CCOUNT`. Expect the checking
+   gate before Account appears, then only the server-confirmed account email.
+   Inspect safe Network metadata to confirm each navigation/refresh revalidates.
+2. For each encoded variant, leave via the Connection check Link, then use Back
+   to return and Forward to leave. This preserves the encoded history entry and
+   exercises cached React identity; address-bar reload alone does not test that
+   boundary. Restore valid identity, leave again, then use the failure shim
+   below with `authCheck.path = 'session'` and `authCheck.mode = 'rejected'`.
+   Back must gate cached content and redirect to login without displaying email.
+3. Repeat with `authCheck.mode = 'unavailable'` and with network failure. Account
+   must remain gated and offer deliberate retry. Restore real fetch before
+   pressing Try again; only a successful fresh check may restore identity.
+   Check loading/unavailable focus and announcements with keyboard navigation.
+   Record shim failures as simulations, not actual revocation or database outage.
+4. With session requests throttled or held pending, navigate away from one
+   encoded entry and return through another; let the earlier request finish
+   after a newer rejection, logout or account switch. It must not restore the
+   earlier identity. Repeat logout and Back/Forward for the encoded entries.
+5. Open `/accounting`, `/account/settings` and encoded unrelated variants such
+   as `/%61ccounting` and `/%61ccount/settings`. No Account content may appear.
+   Open malformed paths `/%`, `/acc%ount`, `/account%` and `/%E0%A4%A`.
+   In development/preview Vite may reject the direct request with URI malformed
+   before React loads. Record that server boundary separately; it does not prove
+   React's handling of malformed locations. React-level malformed-path behavior
+   is covered by the automated matcher/store tests, not by that direct HTTP result.
+6. Optional F-02 preservation check, not repeated in this focused report:
+   while an encoded Account entry stays visible and idle,
+   local expiry must clear identity and show the safe login flow without a
+   session request, polling or automatic retries. A late response must not undo
+   the cleared state. Deliberate later navigation/visibility/retry may revalidate.
+   Record actual idle duration separately; fake-clock tests are simulations.
+
+Restore every shim/blocking rule, sign out the test browsers and stop the guarded
+backend normally. Require the exact marker before recording a browser pass:
+
+```text
+Verified cleanup: all reserved synthetic accounts and sessions are absent.
+```
+
+Report the browser/version, dev/preview cases, visible results, simulation modes,
+idle duration and cleanup observation. Do not infer server-expiration or browser
+coverage from unit tests, or close F-01 based on this guide alone.
+
 ### Safe session failure simulations
 
 This browser-only shim intercepts one selected auth path without reading,
