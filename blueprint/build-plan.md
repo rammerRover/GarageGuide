@@ -17,7 +17,7 @@ Plan must not be introduced during these feature loops.
 - [x] 2. **Sign in, sign out, and protect private sessions.** Verify credentials,
   create expiring and revocable sessions, protect private routes, and confirm
   that one user cannot access another user's records.
-- [ ] 3. **Create and list vehicles in a digital garage.** Allow an authenticated
+- [x] 3. **Create and list vehicles in a digital garage.** Allow an authenticated
   user to add cars and recreational vehicles using manual year, make, model,
   engine, type, mileage, and/or operating-hour information, then display only
   that user's vehicles.
