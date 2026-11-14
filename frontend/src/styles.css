@@ -79,6 +79,11 @@ footer { color: #4b5a67; font-size: 0.9rem; }
 .form-field input:disabled { background: #f5f7f8; }
 .field-hint { color: #40536a; font-size: 0.9rem; margin: 0; }
 .field-error { color: #a12323; margin: 0; }
+.vehicle-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem; }
+.vehicle-card { min-width: 0; padding: clamp(1rem, 3vw, 2rem); border: 1px solid #cbd4db; border-radius: 0.75rem; background: white; }
+.vehicle-card dl { display: grid; gap: 0.75rem; margin-bottom: 0; }
+.vehicle-card dt { color: #40536a; }
+.vehicle-card dd { margin: 0; font-weight: 600; }
 .form-status { margin: 0; }
 .form-status:not(:empty) { margin-top: 1.25rem; }
 .visually-hidden {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useSession } from './useSession.js'
 
@@ -18,7 +18,7 @@ function SessionGate({ unavailable, message, retry }) {
   )
 }
 
-export default function RequireSession({ children }) {
+export default function RequireSession({ children, resetPrivate = false }) {
   const { state, recheck } = useSession()
   const location = useLocation()
   if (!state.visible || state.checkedFor !== location.key || state.status === 'loading') {
@@ -28,5 +28,5 @@ export default function RequireSession({ children }) {
   if (state.status === 'unavailable') {
     return <SessionGate unavailable message={state.notice} retry={recheck} />
   }
-  return children
+  return resetPrivate ? <Fragment key={`${location.key}:${state.generation}`}>{children}</Fragment> : children
 }

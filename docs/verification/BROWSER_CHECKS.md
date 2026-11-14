@@ -1,5 +1,256 @@
 # Manual browser verification
 
+## Feature 3 Step 4: complete for review with user-reported cleanup
+
+The user reported browser observations on November 13, 2026 in Chrome
+156.0.8078.73, in both Vite development and production preview. Reported real
+behavior covers protected routes/history, Account navigation, empty/create/cancel
+flows, all reading combinations and zero versus null, GET reload after POST,
+repeat-submission protection, validation/focus/announcements, two-account
+isolation, response headers, deadline synchronization, no idle polling, full
+visible idle expiration without an API request, keyboard use, responsive layouts,
+and 200% zoom. Unavailable/retry, rejected-session, uncertain-POST, and stale
+responses were reported as simulations, not real PostgreSQL outages.
+
+The user later confirmed all manual checks complete, specifically idle timeout,
+GET/POST session behavior, adding vehicles, and comparison between two accounts.
+This follow-up is user-provided evidence; it does not claim agent browser
+execution or change the classification of simulated failures.
+
+The full attributed record is in [vehicle verification](VEHICLES_STATUS.md).
+The user subsequently confirmed this exact guarded-backend cleanup message:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, and vehicles are absent.
+```
+
+Step 4 and its user-provided evidence were subsequently approved. Step 5 final
+automated/native verification was executed separately and is recorded in
+VEHICLES_STATUS.md; no additional browser run was performed. The exact checkpoint
+proposal awaits staging/commit approval before independent review.
+The agent did not execute browser checks. The original browser observations
+were recorded without a test rerun; fresh Step 5 automated/native results are
+separate. The instructions below remain a repeatable procedure, with the
+original enumerated observations and later all-checks confirmation attributed
+to the user. No additional detailed test trace is invented. Existing
+November 4, 6, and 7 observations remain earlier-feature evidence. Step 3 native
+PostgreSQL and Step 4 automated evidence remain separate.
+
+### Start the guarded environment
+
+1. Stop any ordinary backend on port 8000. Use the existing initialized
+   `garageguide_app_test` and private `backend/.env.test` configuration described
+   below. Do not run schema scripts, initialize anything, display credentials,
+   or use `garageguide_app`. Remove unintended database environment overrides
+   privately; the effective database and physical connections must pass guards.
+2. In a repository-root PowerShell terminal, start only:
+
+   ```powershell
+   $env:RUN_DB_TESTS = "1"
+   backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py
+   ```
+
+   The launcher verifies the test database and prints three reserved synthetic
+   email addresses. These are reservations, not pre-created accounts. Register
+   two through `/register`, choosing your own temporary passwords that satisfy
+   the existing registration policy. Keep passwords only in memory/the password
+   controls; do not paste them into scripts, logs, screenshots, or this document.
+   Use the same credentials on `/login`. No password is printed by the launcher.
+3. Start development in a second root terminal:
+
+   ```powershell
+   npm --prefix frontend run dev
+   ```
+
+   Open `http://127.0.0.1:5173`. Use two independent browser profiles, or a normal
+   and an incognito profile, for users A and B. Two incognito windows can share
+   one cookie jar and are not reliable independent profiles. Never inspect,
+   copy, print, or screenshot the HttpOnly cookie value.
+4. Repeat this entire checklist in production preview after building, using the
+   same guarded backend and `http://127.0.0.1:4173`:
+
+   ```powershell
+   npm --prefix frontend run build
+   npm --prefix frontend run preview
+   ```
+
+   Ports share cookies for the same host, so sign out deliberately and check the
+   active account when changing environment. Keep vehicle model names unique
+   and synthetic, for example `GG-DEV-A-MILES-<your-unique-suffix>` and
+   `GG-PREVIEW-B-HOURS-<your-unique-suffix>`. Record which environment each
+   observation covers. Do not use real account or vehicle data.
+
+### Routes, owned lists, and reading values
+
+1. While signed out, directly load and refresh `/vehicles` and `/vehicles/new`.
+   Both must gate private content and reach the sign-in flow. Check that `/`,
+   `/register`, `/login`, and `/account` still work, including connection retry,
+   generic invalid login, refresh restoration, registration validation/duplicate
+   handling, and logout.
+2. Sign in as A, use Account's Open your garage link, and confirm the empty list.
+   Open Add vehicle. Cancel before saving must return without a POST or new row.
+   Submit four unique vehicles: miles only, hours only, both, and neither.
+   Include confirmed zero for each reading across these cases, a decimal such
+   as `12.3`, optional engine blank/known, free-text type, mixed case, Unicode,
+   and surrounding whitespace. A null reading must display `Not recorded`;
+   confirmed zero must display `0.0`. No reading is inferred from vehicle type.
+3. Confirm one POST per submission, with a relative `/api/vehicles` URL and no
+   ownership fields. After 201 the form clears, navigation loads the garage
+   through GET, and success is announced. No assumed local card is inserted.
+   Identical deliberate submissions are allowed as distinct vehicles. Cards
+   have no detail/edit/delete controls or future maintenance summaries.
+4. In profile B, confirm A's vehicles are absent; add a unique B vehicle. A must
+   not see B's vehicle. In one profile, also sign out of A and sign in as B,
+   then test Back/Forward. A's list and unfinished form must not reappear.
+5. Test direct loads, refresh, Links, and Back/Forward for `/vehicles`,
+   `/vehicles/`, `/VEHICLES`, `/%76ehicles`, `/veh%69cles`, `/vehicles/new`,
+   `/vehicles/new/`, `/VEHICLES/NEW`, and `/%76ehicles/%6Eew`. Each actual
+   protected route must require current session validation before private UI.
+   `/vehicles/1`, `/vehicles/new/other`, `/vehiclesx`, `/vehicle`, and encoded
+   unrelated paths must not show a vehicle page. If Vite rejects a malformed
+   direct HTTP path before React loads, record that as Vite-boundary evidence,
+   not React coverage. Malformed route classification also has Node tests.
+
+### Validation, accessibility, and pending work
+
+1. Submit blank required fields. Check associated labels, hints, errors, first
+   invalid-field focus, and announcements. Correct one field: only its obsolete
+   error clears, and typing must not repeatedly steal focus.
+2. Check year 1885, a year above the server's current year plus one, fractional
+   year, blank make/model/type, and readings `-1`, `1.00`, `1e3`, and
+   `100000000000.0`. These must fail safely. Leave readings blank to mean null,
+   then enter zero explicitly. The browser must not silently round readings.
+3. Throttle a real create request. While pending, inputs and Save are disabled.
+   Repeated click/Enter must not produce extra POSTs. Correctable validation,
+   network, timeout, and vehicle-unavailable failures retain transient values.
+   Success, navigation away, logout, account change, and session end discard
+   the private form. Leaving during a POST cannot undo a server commit; check
+   the garage before any deliberate resubmission.
+4. Complete all operations using the keyboard. Check visible focus, page-heading
+   focus, readable error/status announcements, and meaningful unit labels. Check
+   375, 768, and 1440-pixel widths and 200% zoom without horizontal scrolling or
+   obscured controls. Record browser name/version, date, and environment.
+
+### Failure simulations, separate from real PostgreSQL evidence
+
+Use DevTools only on the guarded synthetic environment. Do not inspect or log
+request bodies, cookies, tokens, passwords, or full request headers. The following
+temporary console wrapper can simulate responses without logging private data.
+Paste it once per document, change `garageSimulation.mode` deliberately, and
+restore it before continuing normal checks. It is test instrumentation, not
+application behavior, and none of its results prove a real database outage.
+
+```javascript
+window.garageSimulation = { mode: 'real', releases: [] }
+const realGarageFetch = window.fetch
+window.fetch = async (input, options = {}) => {
+  const url = new URL(typeof input === 'string' ? input : input.url, location.origin)
+  if (url.pathname !== '/api/vehicles') return realGarageFetch(input, options)
+  const mode = garageSimulation.mode
+  if (mode === 'network') throw new TypeError('Synthetic network failure')
+  if (mode === 'timeout') return new Promise((resolve, reject) => {
+    const stop = () => reject(new DOMException('Synthetic cancellation', 'AbortError'))
+    if (options.signal?.aborted) stop()
+    else options.signal?.addEventListener('abort', stop, { once: true })
+  })
+  const failures = {
+    rejected: [401, 'Not authenticated.'], forbidden: [403, 'Request not allowed.'],
+    authUnavailable: [503, 'Authentication unavailable. Please try again.'],
+    unavailable: [503, 'Vehicles unavailable. Please try again.'],
+    unexpected: [500, 'Internal server error'],
+  }
+  if (failures[mode]) {
+    const [status, detail] = failures[mode]
+    return new Response(JSON.stringify({ detail }), { status, headers: { 'Content-Type': 'application/json' } })
+  }
+  if (mode === 'malformedSuccess') return new Response('{', { status: options.method === 'POST' ? 201 : 200 })
+  const original = await realGarageFetch(input, options)
+  if (mode === 'lostAcknowledgment' && options.method === 'POST' && original.status === 201) {
+    throw new TypeError('Synthetic loss after real committed creation')
+  }
+  if (['delayGet', 'missingDeadline', 'badDeadline', 'expiredDeadline'].includes(mode) && options.method === 'GET' && original.status === 200) {
+    const bytes = await original.arrayBuffer()
+    const headers = new Headers(original.headers)
+    if (mode === 'missingDeadline') headers.delete('X-GarageGuide-Session-Expires-At')
+    if (mode === 'badDeadline') headers.set('X-GarageGuide-Session-Expires-At', 'invalid')
+    if (mode === 'expiredDeadline') headers.set('X-GarageGuide-Session-Expires-At', '2000-01-01T00:00:00Z')
+    if (mode === 'delayGet') await new Promise((resolve) => garageSimulation.releases.push(resolve))
+    return new Response(bytes, { status: 200, headers })
+  }
+  return original
+}
+garageSimulation.restore = () => {
+  window.fetch = realGarageFetch
+  for (const release of garageSimulation.releases.splice(0)) release()
+  delete window.garageSimulation
+}
+```
+
+- Set mode to `network`, `timeout`, `unavailable`, `unexpected`, or
+  `malformedSuccess` and deliberately load/retry the garage or submit the form.
+  Check distinct safe feedback, the ten-second bound, and no automatic retries.
+  An uncertain POST must say the vehicle may have been created and direct you
+  to check the garage. Simulated responses do not create records.
+- `lostAcknowledgment` does send the real guarded POST and waits for its 201
+  before simulating loss. Submit once, switch mode to `real`, and follow the
+  check-garage link: the actual committed vehicle must be present once. Do not
+  resubmit first. This is a simulated lost acknowledgment around a real write.
+- First create successfully, then simulate a failing garage GET. The confirmation
+  must still say the vehicle was created; only the reload is unavailable.
+  To select a GET-only failure, add `&& options.method === 'GET'` to the failure
+  branch in a temporary wrapper, or enable Network blocking for the collection
+  GET after observing its POST 201. Do not claim creation itself failed.
+- `forbidden` must show safe 403 feedback. `rejected` must clear/gate private
+  identity and enter the login/session-ended flow. `authUnavailable` must gate
+  private content and offer deliberate session retry; it must not claim logout
+  or delete a potentially valid server cookie. Restore `real` before retry.
+- `missingDeadline` and `badDeadline` must reject the response without accepting
+  vehicles or inventing an extension. `expiredDeadline` simulates unusable public
+  metadata and must enter the safe local session-ended flow. It does not prove
+  that the database session expired or was revoked.
+- For late work, set `delayGet`, enter the garage, and wait until the real request
+  has completed but the page is still loading. Navigate away or through history,
+  logout, or switch accounts. Set mode to `real`, then run
+  `garageSimulation.releases.splice(0).forEach((release) => release())`.
+  Old data/deadlines must not appear or restore identity. Repeat with rapid
+  encoded-route navigation and unavailable/rejected session responses. This
+  wrapper intentionally holds a buffered synthetic-test response to exercise
+  stale-response handling even after browser request cancellation.
+- Run `garageSimulation.restore()` before ordinary checks, or reload the page.
+  Never persist this wrapper in application files, storage, or telemetry.
+
+### Session deadlines and final cleanup
+
+1. Observe only the public `X-GarageGuide-Session-Expires-At` response header on
+   successful vehicle GET/POST. It must come from the server; successful vehicle
+   activity must update the local deadline without an additional session GET.
+   Navigation/startup/visibility return may separately request session validation.
+   Do not screenshot request-cookie headers or private content.
+2. To observe real idle behavior, leave a valid garage tab in the foreground
+   without further protected actions through its latest known deadline. At the
+   deadline private identity/list/form must clear or gate, with no expiry-driven
+   session request, polling, retry, or idle renewal. This full observation can
+   take 30 minutes. Keep it pending until actually observed; fake-clock Node
+   tests and simulated deadline headers do not prove a real browser idle wait.
+3. Separately test visibility return, deliberate navigation/refresh, and explicit
+   retry. These are user-driven validation paths, not prohibited timer polling.
+   A late response must not restore identity after expiration or logout.
+4. Stop the guarded backend with Ctrl+C and wait for exactly:
+
+   ```text
+   Verified cleanup: all reserved synthetic accounts, sessions, and vehicles are absent.
+   ```
+
+   The launcher removes only its reserved synthetic records, vehicles before
+   users, then verifies absence through separate guarded connections. If cleanup
+   fails, stop all further database testing and resolve only fixture-owned
+   records; never truncate, broadly delete, reset sequences, or initialize schema.
+5. Report date, browser/version, development/preview coverage, real observed
+   passes/failures, simulations performed, full-idle observation status, and the
+   exact cleanup message. Do not include credentials or screenshots of secrets.
+
+---
+
 Feature 1 Step 4 browser checks were completed by the user on November 4, 2026
 in Google Chrome 156.0.8078.73, in development and production preview, with
 verified synthetic-record cleanup. The reported observations are recorded in

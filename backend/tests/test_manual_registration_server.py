@@ -2,9 +2,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from app import database, security, session_queries, user_queries
+from app import database, security, session_queries, user_queries, vehicle_queries
 from app.config import AuthSettings, Settings, get_settings, TEST_DATABASE
 from app.schemas import LoginRequest
+from app.vehicle_schemas import VehicleCreate
 from database_support import TestDatabaseSafetyError
 import manual_registration_server as manual
 
@@ -126,3 +127,78 @@ def test_manual_session_writes_require_owned_cookie_and_restore_functions(
                 getattr(session_queries, operation)(settings, token)
         original.assert_not_called()
     assert getattr(session_queries, operation) is original
+
+
+@pytest.mark.parametrize("operation", ["list_vehicles", "create_vehicle"])
+def test_manual_vehicle_work_rejects_unreserved_owner_before_query(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    original = Mock()
+    monkeypatch.setattr(vehicle_queries, operation, original)
+    native.track_user.side_effect = TestDatabaseSafetyError("Unreserved owner")
+    actor = Mock(user=Mock(id=7, email="unreserved@example.com"))
+    with manual.prepared_test_backend():
+        with pytest.raises(TestDatabaseSafetyError):
+            if operation == "create_vehicle":
+                request = VehicleCreate(year=2020, make="Synthetic", model="Test", vehicle_type="Test")
+                vehicle_queries.create_vehicle(settings, actor=actor, vehicle=request)
+            else:
+                vehicle_queries.list_vehicles(settings, actor=actor)
+        original.assert_not_called()
+        native.reserve_vehicle.assert_not_called()
+    assert getattr(vehicle_queries, operation) is original
+
+
+def test_manual_vehicle_reservation_precedes_write_and_tracking(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    events = []
+    native.track_user.side_effect = lambda *args: events.append("verify-owner")
+    native.reserve_vehicle.side_effect = lambda *args: events.append("reserve-before-write")
+    native.track_vehicle.side_effect = lambda *args: events.append("track-exact-result")
+    original = Mock(side_effect=lambda *args, **kwargs: (events.append("insert"), Mock(id=8))[1])
+    monkeypatch.setattr(vehicle_queries, "create_vehicle", original)
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    request = VehicleCreate(year=2020, make="Synthetic", model="Test", vehicle_type="Test")
+    with manual.prepared_test_backend():
+        result = vehicle_queries.create_vehicle(settings, actor=actor, vehicle=request)
+        assert result.id == 8
+    assert events == ["verify-owner", "reserve-before-write", "insert", "track-exact-result"]
+    native.track_vehicle.assert_called_once_with(8, 7, request)
+    native.cleanup.assert_called_once()
+    assert vehicle_queries.create_vehicle is original
+
+
+def test_manual_lost_vehicle_result_still_runs_reserved_cleanup(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    original = Mock(side_effect=vehicle_queries.VehicleUnavailableError())
+    monkeypatch.setattr(vehicle_queries, "create_vehicle", original)
+    request = VehicleCreate(year=2020, make="Synthetic", model="Test", vehicle_type="Test")
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    with pytest.raises(vehicle_queries.VehicleUnavailableError):
+        with manual.prepared_test_backend():
+            vehicle_queries.create_vehicle(settings, actor=actor, vehicle=request)
+    native.reserve_vehicle.assert_called_once_with(7, request)
+    native.track_vehicle.assert_not_called()
+    native.cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("operation", ["list_vehicles", "create_vehicle"])
+def test_manual_vehicle_wrappers_forward_transaction_preparation(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    callback = Mock()
+    created = Mock(id=8)
+
+    def query(*args, prepare_response, **kwargs):
+        prepare_response(created)
+        return created
+
+    original = Mock(side_effect=query)
+    monkeypatch.setattr(vehicle_queries, operation, original)
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    request = VehicleCreate(year=2020, make="Synthetic", model="Test", vehicle_type="Test")
+    with manual.prepared_test_backend():
+        options = {"vehicle": request} if operation == "create_vehicle" else {}
+        result = getattr(vehicle_queries, operation)(settings, actor=actor, prepare_response=callback, **options)
+        assert result is created
+    callback.assert_called_once_with(created)
+    assert original.call_args.kwargs["prepare_response"] is callback
+    native.cleanup.assert_called_once()

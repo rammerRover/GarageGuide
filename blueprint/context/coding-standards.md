@@ -47,8 +47,10 @@ psycopg, and native PostgreSQL. Follow the proportional-engineering contract in
 - `docs/verification/`: dated verification evidence and manual instructions
 - Create feature subdirectories only when the code needs them
 
-> TODO: Choose client-side routing when product navigation needs it. No router
-> or frontend routing convention is configured yet.
+- Use the installed React Router with one `BrowserRouter`, `Routes`, `Route`,
+  and `Link`. Share actual protected route definitions with session navigation
+  classification through React Router's public matching API. Preserve decoded,
+  case-insensitive, trailing-slash, and history-navigation protection.
 
 ## Naming
 
@@ -92,9 +94,12 @@ psycopg, and native PostgreSQL. Follow the proportional-engineering contract in
   `backend/.env.test`; examples contain placeholders only
 - Test configuration must reject any effective database name other than
   `garageguide_app_test` and must never load development credentials
-- Authentication and ownership enforcement are not implemented yet. Future
-  private routes must derive the owner from the authenticated session and scope
-  queries accordingly; never trust a browser-supplied owner identifier
+- Authentication uses opaque server-side sessions and the reusable authenticated
+  session dependency. Private routes must derive the owner from that validated
+  session and scope queries accordingly; never trust a browser-supplied owner
+  identifier. New vehicle ownership enforcement belongs to its approved feature
+- Preserve trusted-Origin, JSON, and custom CSRF-header enforcement on mutations,
+  safe cookie behavior, and local session-expiration gating without polling
 
 ## Error Handling
 
@@ -112,10 +117,13 @@ Backend pytest is already configured in `backend/pyproject.toml`, with tests in
 gate and excludes native database integration. Run that documented command;
 use focused tests while developing and the full applicable gate before review.
 
-There is no frontend unit-test runner, typecheck, formatter, combined Verify
-command, or GitHub Actions workflow. Frontend work currently uses ESLint, the
-production build, and direct browser evidence where applicable. Do not silently
-install missing tooling. `/tests` and `/ci` own explicit test and CI setup.
+Frontend logic tests use the existing Node test runner. The complete current
+command is `node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js frontend/tests/vehicleApi.test.js frontend/tests/vehicleState.test.js frontend/tests/vehicleSession.test.js`.
+Include any new feature test files explicitly when running the complete suite;
+do not silently omit them or install another runner. Frontend work also uses
+ESLint, the production build, and direct browser evidence where applicable.
+There is no typecheck, formatter, combined Verify command, or GitHub Actions
+workflow. `$tests` and `$ci` own separately approved test and CI setup.
 
 When `AGENTS.md` declares a `Verify` command, treat it as the umbrella automated
 gate. It combines only the checks this project actually has, in this order when

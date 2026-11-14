@@ -1,3 +1,6 @@
+import { parseSessionDeadline } from './sessionDeadline.js'
+import { isPublicVehicle, parseVehicleErrors, prepareVehicleInput } from './vehicleValidation.js'
+
 export async function checkConnection() {
   const response = await fetch('/api/health/db', {
     credentials: 'same-origin',
@@ -214,4 +217,85 @@ export async function getSession(signal) {
 
 export function logoutAccount(signal) {
   return authenticationRequest('logout', {}, signal)
+}
+
+const uncertainVehicle = 'The vehicle may have been created. Check your garage before submitting again.'
+const unexpectedVehicle = "We couldn't confirm the vehicle response."
+
+function vehicleResult(method, response, data) {
+  const successStatus = method === 'GET' ? 200 : 201
+  const unexpected = {
+    kind: method === 'POST' ? 'uncertain' : 'unexpected',
+    message: `${unexpectedVehicle}${method === 'POST' ? ` ${uncertainVehicle}` : ' Please try again.'}`,
+  }
+  if (response.status === successStatus) {
+    const deadline = parseSessionDeadline(response.headers.get('X-GarageGuide-Session-Expires-At'))
+    if (!deadline) return unexpected
+    if (method === 'POST') return isPublicVehicle(data) ? { kind: 'success', vehicle: data, deadline } : unexpected
+    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length !== 1 ||
+        !Object.hasOwn(data, 'vehicles') || !Array.isArray(data.vehicles) || !data.vehicles.every(isPublicVehicle) ||
+        new Set(data.vehicles.map((vehicle) => vehicle.id)).size !== data.vehicles.length) return unexpected
+    return { kind: 'success', vehicles: data.vehicles, deadline }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data) ||
+      Object.keys(data).length !== 1 || !Object.hasOwn(data, 'detail')) return unexpected
+  if (response.status === 422 && method === 'POST') {
+    const errors = parseVehicleErrors(data.detail)
+    return errors ? { kind: 'invalid', errors, message: 'Check your details and try again.' } : unexpected
+  }
+  if (response.status === 401 && data.detail === 'Not authenticated.') return { kind: 'guest' }
+  if (response.status === 403 && data.detail === 'Request not allowed.') {
+    return { kind: 'forbidden', message: 'The request was not accepted. Refresh the page and try again.' }
+  }
+  if (response.status === 503 && data.detail === 'Authentication unavailable. Please try again.') {
+    return { kind: 'authentication-unavailable', message: "We couldn't confirm your session. Please try again." }
+  }
+  if (response.status === 503 && data.detail === 'Vehicles unavailable. Please try again.') {
+    return { kind: 'unavailable', message: method === 'POST' ? `Vehicle creation is unavailable. ${uncertainVehicle}` : 'Your garage is unavailable. Please try again.' }
+  }
+  if (response.status === 500 && data.detail === 'Internal server error') {
+    return { kind: 'unexpected', message: method === 'POST' ? `Vehicle creation was not confirmed. ${uncertainVehicle}` : 'Your garage could not be loaded. Please try again.' }
+  }
+  return unexpected
+}
+
+async function vehicleRequest(method, details, signal) {
+  const controller = new AbortController()
+  let timedOut = false
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) cancel()
+  const timer = setTimeout(() => { timedOut = true; controller.abort() }, 10000)
+  try {
+    if (controller.signal.aborted) return { kind: 'cancelled' }
+    const response = await fetch('/api/vehicles', {
+      method, credentials: 'same-origin', signal: controller.signal,
+      headers: method === 'GET' ? { Accept: 'application/json' } : {
+        Accept: 'application/json', 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1',
+      },
+      ...(method === 'POST' ? { body: JSON.stringify(details) } : {}),
+    })
+    const data = await response.json()
+    controller.signal.throwIfAborted()
+    return vehicleResult(method, response, data)
+  } catch (error) {
+    if (signal?.aborted) return { kind: 'cancelled' }
+    if (timedOut || error instanceof TypeError || error?.name === 'AbortError') {
+      return { kind: 'network', message: method === 'POST' ? `${timedOut ? 'The request timed out.' : 'Creation could not be confirmed.'} ${uncertainVehicle}` : 'Your garage could not be loaded. Check your connection and try again.' }
+    }
+    return { kind: method === 'POST' ? 'uncertain' : 'unexpected', message: `${unexpectedVehicle}${method === 'POST' ? ` ${uncertainVehicle}` : ' Please try again.'}` }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+  }
+}
+
+export function listVehicles(signal) {
+  return vehicleRequest('GET', undefined, signal)
+}
+
+export function createVehicle(details, signal) {
+  const prepared = prepareVehicleInput(details)
+  if (prepared.invalid) return Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check your details and try again.' })
+  return vehicleRequest('POST', prepared.details, signal)
 }

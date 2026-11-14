@@ -1,5 +1,6 @@
 import { matchRoutes } from 'react-router-dom'
-import { accountRoute } from './accountRoute.js'
+import { protectedRoutes } from './vehicleRoutes.js'
+import { parseSessionDeadline } from './sessionDeadline.js'
 import { getSession, loginAccount, logoutAccount } from './api.js'
 
 const unavailableMessage = "We couldn't confirm your session. Please try again."
@@ -7,17 +8,26 @@ const unavailableMessage = "We couldn't confirm your session. Please try again."
 export function createSessionStore(api = { getSession, loginAccount, logoutAccount }, now = Date.now) {
   let state = {
     status: 'loading', user: null, expires_at: null, checkedFor: null,
-    notice: '', busy: null, visible: true,
+    notice: '', busy: null, visible: true, generation: 0,
   }
   let route = null
   let active = null
   let needsRecheck = false
+  let navigationGeneration = 0
+  let privateActive = null
+  let authenticationGeneration = 0
   const listeners = new Set()
   const publish = (changes) => {
-    state = { ...state, ...changes }
+    state = { ...state, ...changes, generation: authenticationGeneration }
     for (const listener of listeners) listener()
   }
+  const cancelPrivate = () => {
+    privateActive?.controller.abort()
+    privateActive = null
+    authenticationGeneration += 1
+  }
   const cancel = () => {
+    cancelPrivate()
     active?.controller.abort()
     active = null
   }
@@ -113,10 +123,42 @@ export function createSessionStore(api = { getSession, loginAccount, logoutAccou
     return result
   }
 
+  async function authenticatedRequest(operation, signal) {
+    if (state.status !== 'authenticated' || !state.visible || state.checkedFor !== route?.key || active) return { kind: 'cancelled' }
+    if (Date.parse(state.expires_at) <= now()) { endSession(); return { kind: 'guest' } }
+    privateActive?.controller.abort()
+    const request = { controller: new AbortController(), generation: authenticationGeneration, navigation: navigationGeneration }
+    const combined = signal ? AbortSignal.any([signal, request.controller.signal]) : request.controller.signal
+    privateActive = request
+    let result
+    try { result = await operation(combined) } catch {
+      result = { kind: 'unexpected', message: "We couldn't confirm the response. Check your garage before submitting again." }
+    }
+    const valid = privateActive === request && !combined.aborted && request.generation === authenticationGeneration &&
+      request.navigation === navigationGeneration && state.status === 'authenticated' && state.visible && state.checkedFor === route?.key
+    if (privateActive === request) privateActive = null
+    if (!valid) return { kind: 'cancelled' }
+    if (Date.parse(state.expires_at) <= now() || result.kind === 'guest') { endSession(); return { kind: 'guest' } }
+    if (result.kind === 'authentication-unavailable') {
+      cancelPrivate()
+      publish({ status: 'unavailable', user: null, expires_at: null, checkedFor: route?.key, notice: unavailableMessage })
+    }
+    if (result.kind === 'success') {
+      const deadline = parseSessionDeadline(result.deadline)
+      if (deadline && Date.parse(deadline) <= now()) { endSession(); return { kind: 'guest' } }
+      if (!deadline || Date.parse(deadline) < Date.parse(state.expires_at)) {
+        return { kind: 'unexpected', message: "We couldn't confirm the response. Check your garage before submitting again." }
+      }
+      publish({ expires_at: deadline })
+    }
+    return result
+  }
+
   return {
     getSnapshot: () => state,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
     recheck,
+    authenticatedRequest,
     login: (details, signal) => mutate('login', details, signal),
     logout: (signal) => mutate('logout', undefined, signal),
     watchExpiry() {
@@ -129,16 +171,18 @@ export function createSessionStore(api = { getSession, loginAccount, logoutAccou
       return () => clearTimeout(timer)
     },
     enter(key, pathname) {
+      navigationGeneration += 1
       const uncertain = Boolean(active)
       cancel()
       needsRecheck = false
-      route = { key, protected: Boolean(matchRoutes([accountRoute], { pathname })) }
+      route = { key, protected: Boolean(matchRoutes(protectedRoutes, { pathname })) }
       publish({ busy: null })
       if (route.protected || uncertain || state.status === 'loading') return recheck()
       publish({ checkedFor: key })
       return Promise.resolve()
     },
     hide() {
+      cancelPrivate()
       publish({ visible: false, checkedFor: null })
     },
     resume() {

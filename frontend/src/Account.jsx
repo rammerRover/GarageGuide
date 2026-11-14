@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useSession } from './useSession.js'
 
 export default function Account() {
@@ -40,6 +40,7 @@ export default function Account() {
       <h1 id="account-title" ref={heading} tabIndex={-1}>Signed in.</h1>
       <p className="account-email">{state.user.email}</p>
       <p>Current session deadline: <time dateTime={state.expires_at}>{new Date(state.expires_at).toLocaleString()}</time>.</p>
+      <p><Link to="/vehicles">Open your garage</Link></p>
       <button type="button" onClick={handleLogout} disabled={pending}>{pending ? 'Signing out' : 'Sign out'}</button>
       <p className="form-status" role="status" aria-live="polite" aria-atomic="true">
         {pending ? 'Signing out. Please wait.' : ''}

@@ -6,10 +6,10 @@ Application stack: React (Vite and JavaScript) → FastAPI (Python 3.13) → Pos
 | Directory | Purpose |
 | --- | --- |
 | `frontend/` | Vite configuration, npm scripts and dependency lockfile. |
-| `frontend/src/` | One React Router, public connection/registration/login pages, protected account page, in-memory session state, API helpers and responsive CSS. |
+| `frontend/src/` | One React Router, public connection/registration/login pages, protected account/garage/create-vehicle pages, in-memory session state, API helpers and responsive CSS. |
 | `backend/` | Requirements, example environments and pytest tool configuration. Dependencies are declared only in requirements files. |
 | `backend/app/` | App creation, private settings, credential validation/hashing, and direct psycopg queries with explicit transaction boundaries. |
-| `backend/app/routes/` | Public health endpoints, registration, and login/session/logout APIs with safe errors and CSRF enforcement. |
+| `backend/app/routes/` | Public health endpoints, registration, login/session/logout, and authenticated vehicle list/create APIs with safe errors and mutation CSRF enforcement. |
 | `backend/tests/` | Database-free health/registration tests, guarded opt-in native transaction/API checks, and a synthetic-account-only manual browser backend launcher. |
 | `database/` | Existing authoritative SQL and database instructions. |
 | `docs/verification/` | Historical database evidence and current manual verification instructions. |
@@ -161,7 +161,7 @@ Focused frontend checks use the installed Node runtime's built-in test tooling;
 no external test runner or dependency was installed:
 
 ```powershell
-node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js
+node --test frontend/tests/api.test.js frontend/tests/sessionState.test.js frontend/tests/credentialValidation.test.js frontend/tests/vehicleApi.test.js frontend/tests/vehicleState.test.js frontend/tests/vehicleSession.test.js
 ```
 
 For browser tests that create accounts, replace the ordinary backend command
@@ -177,6 +177,34 @@ npm run preview
 ```
 
 Preview is available at `http://127.0.0.1:4173` and also proxies to the running backend. Production hosting is outside this milestone.
+
+## Vehicle creation and listing
+
+Sign in, open Account, and select Open your garage. `/vehicles` lists only the
+validated session owner's vehicles; `/vehicles/new` creates one. Detail, editing,
+and deletion are outside Feature 3. Blank readings mean not recorded; confirmed
+zero remains `0.0`. Reading values travel as decimal strings, not floating-point
+numbers. The backend validates model years from 1886 through its current year
+plus one. Vehicle type is free text.
+
+- `GET /api/vehicles` returns `200 {"vehicles":[...]}`; an empty list is success.
+- `POST /api/vehicles` accepts year/make/model/type, optional engine, and optional
+  mileage/hours. It assigns ownership from the server session and returns a
+  public vehicle with 201 only after commit and connection cleanup. It uses the
+  same trusted-Origin, JSON, and custom CSRF-header policy as authentication.
+- All vehicle responses use `Cache-Control: no-store`. Successful responses
+  include the validated session's committed `X-GarageGuide-Session-Expires-At`.
+  React accepts data/deadlines only for current session/navigation/request work;
+  this does not issue an extra authentication request or create an expiry poll.
+- Identical vehicles are allowed. A timeout or lost acknowledgment can conceal
+  a committed create. Check the garage before deliberately resubmitting; POSTs
+  are never retried automatically.
+
+Recorded automated/native evidence and the user's November 13, 2026 browser
+observations are separated in [vehicle verification](docs/verification/VEHICLES_STATUS.md).
+The guarded [browser guide](docs/verification/BROWSER_CHECKS.md) uses only exact
+synthetic fixtures in `garageguide_app_test`, with verified vehicle/session/user
+cleanup. It must never run against ordinary development data.
 
 ## Tests and verification
 

@@ -12,7 +12,7 @@ if __name__ == "__main__":
 import pytest
 import uvicorn
 
-from app import database, session_queries, user_queries
+from app import database, session_queries, user_queries, vehicle_queries
 from app.config import get_auth_settings, get_settings, load_auth_settings, load_settings
 from app.main import create_app
 from database_support import NativeTestDatabase, TestDatabaseSafetyError
@@ -30,6 +30,8 @@ def prepared_test_backend():
     original_issue = session_queries.create_session
     original_extend = session_queries.validate_and_extend_session
     original_revoke = session_queries.revoke_session
+    original_list_vehicles = vehicle_queries.list_vehicles
+    original_create_vehicle = vehicle_queries.create_vehicle
     native = NativeTestDatabase(settings, original_connect)
     try:
         native.check_schema()
@@ -62,6 +64,19 @@ def prepared_test_backend():
             native.require_reserved_session(token)
             return original_revoke(settings, token)
 
+        def list_reserved_vehicles(settings, *, actor, prepare_response=None):
+            native.track_user(actor.user.id, actor.user.email)
+            options = {"prepare_response": prepare_response} if prepare_response is not None else {}
+            return original_list_vehicles(settings, actor=actor, **options)
+
+        def create_reserved_vehicle(settings, *, actor, vehicle, prepare_response=None):
+            native.track_user(actor.user.id, actor.user.email)
+            native.reserve_vehicle(actor.user.id, vehicle)
+            options = {"prepare_response": prepare_response} if prepare_response is not None else {}
+            created = original_create_vehicle(settings, actor=actor, vehicle=vehicle, **options)
+            native.track_vehicle(created.id, actor.user.id, vehicle)
+            return created
+
         with ExitStack() as patches:
             for owner, name, replacement in (
                 (database, "connect_database", native.connect),
@@ -70,6 +85,8 @@ def prepared_test_backend():
                 (session_queries, "create_session", create_reserved_session),
                 (session_queries, "validate_and_extend_session", extend_reserved_session),
                 (session_queries, "revoke_session", revoke_reserved_session),
+                (vehicle_queries, "list_vehicles", list_reserved_vehicles),
+                (vehicle_queries, "create_vehicle", create_reserved_vehicle),
             ):
                 patches.enter_context(patch.object(owner, name, replacement))
             application = create_app()
@@ -103,7 +120,7 @@ def main(argv=None):
             file=sys.stderr,
         )
         return 1
-    print("Verified cleanup: all reserved synthetic accounts and sessions are absent.")
+    print("Verified cleanup: all reserved synthetic accounts, sessions, and vehicles are absent.")
     return 0
 
 

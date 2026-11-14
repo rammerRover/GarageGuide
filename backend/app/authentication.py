@@ -14,6 +14,7 @@ from app.config import (
 
 SESSION_COOKIE_NAME = "garageguide_session"
 CSRF_HEADER = "X-GarageGuide-CSRF"
+SESSION_DEADLINE_HEADER = "X-GarageGuide-Session-Expires-At"
 logger = logging.getLogger(__name__)
 
 
@@ -34,6 +35,16 @@ class AuthenticationFailure(HTTPException):
 class RequestPolicyError(ValueError):
     def __init__(self):
         super().__init__("Request not allowed.")
+
+
+def attach_session_deadline(
+    response: Response, actor: session_queries.AuthenticatedSession,
+) -> None:
+    if response.status_code not in (200, 201):
+        return
+    if actor.expires_at.tzinfo is None or actor.expires_at.utcoffset() is None:
+        raise ValueError("Validated session deadline must be timezone-aware")
+    response.headers[SESSION_DEADLINE_HEADER] = actor.expires_at.isoformat()
 
 
 def validate_cookie_transport(request: Request, settings: AuthSettings) -> None:

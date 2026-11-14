@@ -32,6 +32,6 @@ export default function SessionProvider({ children }) {
 
   useEffect(() => store.watchExpiry(), [store, state.expires_at])
 
-  const value = useMemo(() => ({ state, recheck: store.recheck, login: store.login, logout: store.logout }), [state, store])
+  const value = useMemo(() => ({ state, recheck: store.recheck, login: store.login, logout: store.logout, authenticatedRequest: store.authenticatedRequest }), [state, store])
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
 }

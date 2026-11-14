@@ -34,7 +34,7 @@ def native_database(request, monkeypatch):
                 users, sessions = native.cleanup_counts
                 print(
                     f"Verified exact cleanup: {users} synthetic users and {sessions} tracked "
-                    "sessions absent from garageguide_app_test."
+                    f"sessions and {native.cleanup_vehicle_count} vehicles absent from garageguide_app_test."
                 )
         except BaseException:
             request.session.shouldstop = "Native cleanup failed; resolve tracked fixtures before continuing"
