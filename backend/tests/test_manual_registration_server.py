@@ -5,7 +5,7 @@ import pytest
 from app import database, security, session_queries, user_queries, vehicle_queries
 from app.config import AuthSettings, Settings, get_settings, TEST_DATABASE
 from app.schemas import LoginRequest
-from app.vehicle_schemas import VehicleCreate
+from app.vehicle_schemas import VehicleCreate, VehiclePatch
 from database_support import TestDatabaseSafetyError
 import manual_registration_server as manual
 
@@ -201,4 +201,40 @@ def test_manual_vehicle_wrappers_forward_transaction_preparation(guarded_setup, 
         assert result is created
     callback.assert_called_once_with(created)
     assert original.call_args.kwargs["prepare_response"] is callback
+    native.cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("operation", ["get_vehicle", "update_vehicle"])
+def test_manual_profile_wrappers_guard_exact_identity_before_work_and_forward_callback(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    events = []
+    native.track_user.side_effect = lambda *args: events.append("owner")
+    native.require_reserved_vehicle.side_effect = lambda *args: events.append("exact-vehicle")
+    callback = Mock()
+    returned = Mock()
+    original = Mock(side_effect=lambda *args, **kwargs: (events.append("query"), returned)[1])
+    monkeypatch.setattr(vehicle_queries, operation, original)
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    options = {"patch": VehiclePatch(model="Updated")} if operation == "update_vehicle" else {}
+    with manual.prepared_test_backend():
+        assert getattr(vehicle_queries, operation)(settings, actor=actor, vehicle_id=8, prepare_response=callback, **options) is returned
+    assert events == ["owner", "exact-vehicle", "query"]
+    native.require_reserved_vehicle.assert_called_once_with(8, 7)
+    assert original.call_args.kwargs == {"actor": actor, "vehicle_id": 8, "prepare_response": callback, **options}
+    native.cleanup.assert_called_once()
+    assert getattr(vehicle_queries, operation) is original
+
+
+@pytest.mark.parametrize("operation", ["get_vehicle", "update_vehicle"])
+def test_manual_profile_guard_rejects_untracked_vehicle_before_query_and_still_cleans(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    native.require_reserved_vehicle.side_effect = TestDatabaseSafetyError("Only tracked synthetic vehicles")
+    original = Mock()
+    monkeypatch.setattr(vehicle_queries, operation, original)
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    options = {"patch": VehiclePatch(model="Updated")} if operation == "update_vehicle" else {}
+    with pytest.raises(TestDatabaseSafetyError):
+        with manual.prepared_test_backend():
+            getattr(vehicle_queries, operation)(settings, actor=actor, vehicle_id=8, **options)
+    original.assert_not_called()
     native.cleanup.assert_called_once()

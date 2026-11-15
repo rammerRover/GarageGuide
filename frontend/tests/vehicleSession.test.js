@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createMemoryRouter, matchRoutes } from 'react-router-dom'
 import { createSessionStore } from '../src/sessionState.js'
-import { protectedRoutes, vehiclesRoute, newVehicleRoute } from '../src/vehicleRoutes.js'
+import { protectedRoutes, vehicleDetailRoute, newVehicleRoute } from '../src/vehicleRoutes.js'
 
 const now = Date.parse('2026-11-13T12:00:00Z')
 const minute = 60_000
@@ -19,13 +19,15 @@ function fixture(api = {}, clock = () => now) {
 }
 
 const variants = ['/vehicles', '/vehicles/', '/VEHICLES', '/%76ehicles', '/veh%69cles',
-  '/vehicles/new', '/vehicles/new/', '/VEHICLES/NEW', '/%76ehicles/%6Eew']
+  '/vehicles/new', '/vehicles/new/', '/VEHICLES/NEW', '/%76ehicles/%6Eew',
+  '/vehicles/7', '/vehicles/7/', '/VEHICLES/7', '/%76ehicles/%37', '/veh%69cles/2147483647',
+  '/vehicles/01', '/vehicles/0', '/vehicles/not-an-id']
 for (const path of variants) {
   test(`real route matching gates direct, refresh and protected navigation for ${path}`, async () => {
     const reply = deferred()
     let calls = 0
     const store = fixture({ getSession: () => ++calls === 1 ? Promise.resolve(success(1)) : reply.promise }).store
-    const real = matchRoutes([vehiclesRoute, newVehicleRoute], { pathname: path })
+    const real = matchRoutes(protectedRoutes, { pathname: path })
     assert.ok(real)
     await store.enter('direct', path)
     const navigation = store.enter('refresh', path)
@@ -49,14 +51,65 @@ for (const path of variants) {
   }
 }
 
-for (const path of ['/vehicles/1', '/vehicles/new/other', '/vehiclesx', '/vehicle', '/%76ehiclesx', '/%zz', '/vehicles/%zz', '/vehicles/ne%']) {
+for (const path of ['/vehicles/7/other', '/vehicles/new/other', '/vehiclesx', '/vehicle', '/%76ehiclesx', '/%zz']) {
   test(`unrelated or malformed route is not classified as a vehicle page: ${path}`, async (t) => {
     t.mock.method(console, 'warn', () => {})
-    assert.equal(matchRoutes([vehiclesRoute, newVehicleRoute], { pathname: path }), null)
+    assert.equal(matchRoutes(protectedRoutes, { pathname: path }), null)
     const { store, calls } = fixture()
     await store.enter('initial', '/')
     await store.enter('other', path)
     assert.equal(calls(), 1)
+  })
+}
+
+for (const path of ['/vehicles/new', '/vehicles/new/', '/VEHICLES/NEW', '/%76ehicles/%6Eew']) {
+  test(`static create route outranks dynamic profile: ${path}`, () => {
+    assert.equal(matchRoutes(protectedRoutes, path).at(-1).route, newVehicleRoute)
+  })
+}
+
+for (const path of ['/vehicles/7', '/vehicles/7/', '/VEHICLES/7', '/%76ehicles/%37']) {
+  test(`rendered profile and session classification share the same route: ${path}`, () => {
+    const matches = matchRoutes(protectedRoutes, path)
+    assert.equal(matches.at(-1).route, vehicleDetailRoute)
+    assert.equal(matches.at(-1).params.vehicleId, '7')
+  })
+  test(`profile Back/Forward never accepts earlier authenticated work: ${path}`, async () => {
+    const { store, calls } = fixture()
+    const router = createMemoryRouter([{ path: '/' }, ...protectedRoutes], { initialEntries: ['/'] })
+    let checking = store.enter(router.state.location.key, router.state.location.pathname)
+    let previous = router.state.location.key
+    const unsubscribe = router.subscribe(({ location }) => {
+      if (location.key === previous) return
+      previous = location.key
+      checking = store.enter(location.key, location.pathname)
+    })
+    try {
+      await checking
+      await router.navigate(path); await checking
+      const reply = deferred()
+      const stale = store.authenticatedRequest(() => reply.promise)
+      await router.navigate('/vehicles/8'); await checking
+      await router.navigate(-1); await checking
+      reply.resolve(vehicles(now + 50 * minute))
+      assert.equal((await stale).kind, 'cancelled')
+      await router.navigate(1); await checking
+      assert.equal(calls(), 5)
+      assert.equal(store.getSnapshot().checkedFor, router.state.location.key)
+      assert.equal(store.getSnapshot().expires_at, session().expires_at)
+    } finally { unsubscribe(); router.dispose(); store.dispose() }
+  })
+}
+
+for (const path of ['/vehicles/%zz', '/vehicles/ne%', '/vehicles/%E0%A4%A']) {
+  test(`router-side malformed ID remains gated for safe ID validation: ${path}`, async (t) => {
+    t.mock.method(console, 'warn', () => {})
+    assert.equal(matchRoutes(protectedRoutes, path).at(-1).route, vehicleDetailRoute)
+    const { store, calls } = fixture()
+    await store.enter('initial', '/')
+    await store.enter('malformed', path)
+    assert.equal(calls(), 2)
+    assert.equal(store.getSnapshot().checkedFor, 'malformed')
   })
 }
 

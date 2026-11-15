@@ -7,9 +7,10 @@ import Account from './Account.jsx'
 import RequireSession from './RequireSession.jsx'
 import SessionProvider from './SessionContext.jsx'
 import { accountRoute } from './accountRoute.js'
-import { vehiclesRoute, newVehicleRoute } from './vehicleRoutes.js'
+import { vehiclesRoute, newVehicleRoute, vehicleDetailRoute } from './vehicleRoutes.js'
 import VehiclesPage from './VehiclesPage.jsx'
 import CreateVehiclePage from './CreateVehiclePage.jsx'
+import VehicleDetailPage from './VehicleDetailPage.jsx'
 
 const messages = {
   idle: 'Ready to check the connection.',
@@ -74,6 +75,7 @@ export default function App() {
             <Route {...accountRoute} element={<RequireSession><Account /></RequireSession>} />
             <Route {...vehiclesRoute} element={<RequireSession resetPrivate><VehiclesPage /></RequireSession>} />
             <Route {...newVehicleRoute} element={<RequireSession resetPrivate><CreateVehiclePage /></RequireSession>} />
+            <Route {...vehicleDetailRoute} element={<RequireSession resetPrivate><VehicleDetailPage /></RequireSession>} />
           </Routes>
         </main>
         <footer>GarageGuide · Project foundation</footer>

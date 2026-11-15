@@ -1,5 +1,8 @@
 import { parseSessionDeadline } from './sessionDeadline.js'
-import { isPublicVehicle, parseVehicleErrors, prepareVehicleInput } from './vehicleValidation.js'
+import {
+  isPublicVehicle, isVehicleId, parseReadingConfirmation, parseVehicleErrors,
+  prepareVehicleInput, prepareVehiclePatch, vehicleIdMessage,
+} from './vehicleValidation.js'
 
 export async function checkConnection() {
   const response = await fetch('/api/health/db', {
@@ -259,7 +262,50 @@ function vehicleResult(method, response, data) {
   return unexpected
 }
 
-async function vehicleRequest(method, details, signal) {
+export const uncertainVehicleUpdate = 'The update may have completed. Reload this vehicle and check its current values before submitting again.'
+
+function profileResult(method, response, data, vehicleId, submitted) {
+  const mutation = method === 'PATCH'
+  const unexpected = {
+    kind: mutation ? 'uncertain' : 'unexpected', uncertain: mutation,
+    message: mutation ? uncertainVehicleUpdate : "We couldn't confirm the vehicle response. Please try again.",
+  }
+  if (response.status === 200) {
+    const deadline = parseSessionDeadline(response.headers.get('X-GarageGuide-Session-Expires-At'))
+    return isPublicVehicle(data) && String(data.id) === vehicleId && deadline
+      ? { kind: 'success', vehicle: data, deadline } : unexpected
+  }
+  if (response.status === 409 && mutation) {
+    const confirmation = parseReadingConfirmation(data, submitted)
+    return confirmation ? {
+      kind: confirmation.fields.length ? 'confirmation-required' : 'reload-required', ...confirmation,
+      message: confirmation.fields.length ? 'Review and confirm the reading changes.' : 'The readings changed. Reload this vehicle and review its current values before saving.',
+    } : unexpected
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data) ||
+      Object.keys(data).length !== 1 || !Object.hasOwn(data, 'detail')) return unexpected
+  if (response.status === 422) {
+    const errors = parseVehicleErrors(data.detail, { patch: true })
+    if (!mutation && (!errors || data.detail.some((entry) =>
+      entry.loc.length !== 2 || entry.loc[0] !== 'path' || entry.loc[1] !== 'vehicle_id'))) return unexpected
+    return errors ? { kind: 'invalid', errors, message: 'Check your details and try again.' } : unexpected
+  }
+  if (response.status === 404 && data.detail === 'Vehicle not found.') return { kind: 'not-found', message: 'Vehicle not found.' }
+  if (response.status === 401 && data.detail === 'Not authenticated.') return { kind: 'guest' }
+  if (response.status === 403 && data.detail === 'Request not allowed.') {
+    return { kind: 'forbidden', message: 'The request was not accepted. Refresh the page and try again.' }
+  }
+  if (response.status === 503 && data.detail === 'Authentication unavailable. Please try again.') {
+    return { kind: 'authentication-unavailable', message: "We couldn't confirm your session. Please try again." }
+  }
+  if (response.status === 503 && data.detail === 'Vehicles unavailable. Please try again.') {
+    return { kind: 'unavailable', uncertain: mutation, message: mutation ? uncertainVehicleUpdate : 'This vehicle is unavailable. Please try again.' }
+  }
+  if (response.status === 500 && data.detail === 'Internal server error') return unexpected
+  return unexpected
+}
+
+async function vehicleRequest(method, details, signal, vehicleId = null) {
   const controller = new AbortController()
   let timedOut = false
   const cancel = () => controller.abort()
@@ -268,18 +314,25 @@ async function vehicleRequest(method, details, signal) {
   const timer = setTimeout(() => { timedOut = true; controller.abort() }, 10000)
   try {
     if (controller.signal.aborted) return { kind: 'cancelled' }
-    const response = await fetch('/api/vehicles', {
+    const response = await fetch(vehicleId === null ? '/api/vehicles' : `/api/vehicles/${vehicleId}`, {
       method, credentials: 'same-origin', signal: controller.signal,
       headers: method === 'GET' ? { Accept: 'application/json' } : {
         Accept: 'application/json', 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1',
       },
-      ...(method === 'POST' ? { body: JSON.stringify(details) } : {}),
+      ...(method === 'POST' || method === 'PATCH' ? { body: JSON.stringify(details) } : {}),
     })
     const data = await response.json()
     controller.signal.throwIfAborted()
-    return vehicleResult(method, response, data)
+    return vehicleId === null ? vehicleResult(method, response, data) : profileResult(method, response, data, vehicleId, details)
   } catch (error) {
     if (signal?.aborted) return { kind: 'cancelled' }
+    if (vehicleId !== null) {
+      const mutation = method === 'PATCH'
+      return {
+        kind: timedOut || error instanceof TypeError || error?.name === 'AbortError' ? 'network' : mutation ? 'uncertain' : 'unexpected',
+        uncertain: mutation, message: mutation ? uncertainVehicleUpdate : 'This vehicle could not be loaded. Check your connection and try again.',
+      }
+    }
     if (timedOut || error instanceof TypeError || error?.name === 'AbortError') {
       return { kind: 'network', message: method === 'POST' ? `${timedOut ? 'The request timed out.' : 'Creation could not be confirmed.'} ${uncertainVehicle}` : 'Your garage could not be loaded. Check your connection and try again.' }
     }
@@ -298,4 +351,20 @@ export function createVehicle(details, signal) {
   const prepared = prepareVehicleInput(details)
   if (prepared.invalid) return Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check your details and try again.' })
   return vehicleRequest('POST', prepared.details, signal)
+}
+
+export function getVehicle(vehicleId, signal) {
+  if (!isVehicleId(vehicleId)) return Promise.resolve({ kind: 'invalid', errors: { vehicle_id: vehicleIdMessage }, message: 'Check the vehicle ID.' })
+  return vehicleRequest('GET', undefined, signal, vehicleId)
+}
+
+export function updateVehicle(vehicleId, current, values, confirmation, signal) {
+  if (!isVehicleId(vehicleId)) return Promise.resolve({ kind: 'invalid', errors: { vehicle_id: vehicleIdMessage }, message: 'Check the vehicle ID.' })
+  if (!isPublicVehicle(current) || String(current.id) !== vehicleId) {
+    return Promise.resolve({ kind: 'reload-required', message: 'Reload this vehicle before saving.' })
+  }
+  const prepared = prepareVehiclePatch(current, values, confirmation)
+  if (prepared.invalid) return Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check your details and try again.' })
+  if (prepared.unchanged) return Promise.resolve({ kind: 'unchanged', message: 'No changes to save.' })
+  return vehicleRequest('PATCH', prepared.details, signal, vehicleId)
 }

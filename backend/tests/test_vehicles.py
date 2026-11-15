@@ -300,10 +300,10 @@ def test_validation_boundary_never_reflects_arbitrary_exception_messages(client,
 
 
 @pytest.mark.parametrize(("method", "path", "expected"), [
-    ("GET", "/api/vehicles/1", 404), ("PATCH", "/api/vehicles", 405),
+    ("GET", "/api/vehicles/1/unknown", 404), ("PATCH", "/api/vehicles", 405),
     ("DELETE", "/api/vehicles", 405), ("GET", "/api/vehicles/", 307),
 ])
-def test_no_detail_mutations_or_cacheable_routing_responses(client, method, path, expected):
+def test_unsupported_methods_and_routing_responses_are_not_cacheable(client, method, path, expected):
     response = client.request(method, path, follow_redirects=False)
     assert response.status_code == expected
     assert response.headers["cache-control"] == "no-store" and DEADLINE not in response.headers

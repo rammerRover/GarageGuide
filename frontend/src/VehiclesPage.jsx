@@ -44,7 +44,7 @@ export default function VehiclesPage() {
         <ul className="vehicle-list">
           {state.vehicles.map((vehicle) => (
             <li key={vehicle.id} className="vehicle-card">
-              <h2>{vehicle.year} {vehicle.make} {vehicle.model}</h2>
+              <h2><Link to={`/vehicles/${vehicle.id}`}>{vehicle.year} {vehicle.make} {vehicle.model}</Link></h2>
               <dl>
                 <div><dt>Vehicle type</dt><dd>{vehicle.vehicle_type}</dd></div>
                 <div><dt>Engine</dt><dd>{vehicle.engine ?? 'Not recorded'}</dd></div>

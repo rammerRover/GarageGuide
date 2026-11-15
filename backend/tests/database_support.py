@@ -163,6 +163,21 @@ class NativeTestDatabase:
             raise TestDatabaseSafetyError("Synthetic vehicle ownership could not be verified")
         self._vehicles[vehicle_id] = user_id
 
+    def require_reserved_vehicle(self, vehicle_id, user_id):
+        if user_id not in self._users:
+            raise TestDatabaseSafetyError("Vehicle owner must be a tracked synthetic user")
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT id FROM public.vehicles WHERE id = %s AND user_id = %s",
+                (vehicle_id, user_id),
+            ).fetchone()
+        # Let the production query return its ordinary missing/foreign outcome.
+        # Never adopt a record merely because its owner or current values match.
+        if row is not None and self._vehicles.get(vehicle_id) != user_id:
+            raise TestDatabaseSafetyError("Only tracked synthetic vehicles may be accessed or updated")
+        if row is not None:
+            self.cleanup_verified = False
+
     def _recover_and_delete_vehicles(self, connection):
         for reservation in self._vehicle_reservations:
             rows = connection.execute(

@@ -32,6 +32,8 @@ def prepared_test_backend():
     original_revoke = session_queries.revoke_session
     original_list_vehicles = vehicle_queries.list_vehicles
     original_create_vehicle = vehicle_queries.create_vehicle
+    original_get_vehicle = vehicle_queries.get_vehicle
+    original_update_vehicle = vehicle_queries.update_vehicle
     native = NativeTestDatabase(settings, original_connect)
     try:
         native.check_schema()
@@ -77,6 +79,18 @@ def prepared_test_backend():
             native.track_vehicle(created.id, actor.user.id, vehicle)
             return created
 
+        def get_reserved_vehicle(settings, *, actor, vehicle_id, prepare_response=None):
+            native.track_user(actor.user.id, actor.user.email)
+            native.require_reserved_vehicle(vehicle_id, actor.user.id)
+            options = {"prepare_response": prepare_response} if prepare_response is not None else {}
+            return original_get_vehicle(settings, actor=actor, vehicle_id=vehicle_id, **options)
+
+        def update_reserved_vehicle(settings, *, actor, vehicle_id, patch, prepare_response=None):
+            native.track_user(actor.user.id, actor.user.email)
+            native.require_reserved_vehicle(vehicle_id, actor.user.id)
+            options = {"prepare_response": prepare_response} if prepare_response is not None else {}
+            return original_update_vehicle(settings, actor=actor, vehicle_id=vehicle_id, patch=patch, **options)
+
         with ExitStack() as patches:
             for owner, name, replacement in (
                 (database, "connect_database", native.connect),
@@ -87,6 +101,8 @@ def prepared_test_backend():
                 (session_queries, "revoke_session", revoke_reserved_session),
                 (vehicle_queries, "list_vehicles", list_reserved_vehicles),
                 (vehicle_queries, "create_vehicle", create_reserved_vehicle),
+                (vehicle_queries, "get_vehicle", get_reserved_vehicle),
+                (vehicle_queries, "update_vehicle", update_reserved_vehicle),
             ):
                 patches.enter_context(patch.object(owner, name, replacement))
             application = create_app()

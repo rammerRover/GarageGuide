@@ -114,3 +114,60 @@ def test_vehicle_reservation_wrong_physical_database_never_exposes_writer(settin
     unsafe.execute.assert_called_once_with("SELECT current_database()")
     unsafe.close.assert_called_once()
     assert not native._vehicle_reservations
+
+
+def test_update_guard_rejects_unreserved_owner_before_connect(settings):
+    connect = Mock()
+    native = NativeTestDatabase(settings, connect)
+    with pytest.raises(TestDatabaseSafetyError, match="owner"):
+        native.require_reserved_vehicle(8, 42)
+    connect.assert_not_called()
+
+
+def test_update_guard_checks_exact_id_owner_without_matching_mutable_values(settings):
+    lookup = connection_with((TEST_DATABASE,), (8,))
+    native, _ = owned_native(settings, lookup)
+    native._vehicles[8] = 42
+    native.cleanup_verified = True
+    native.require_reserved_vehicle(8, 42)
+    assert lookup.execute.call_args_list[0].args == ("SELECT current_database()",)
+    assert lookup.execute.call_args.args == (
+        "SELECT id FROM public.vehicles WHERE id = %s AND user_id = %s", (8, 42),
+    )
+    assert len(lookup.execute.call_args_list) == 2
+    assert native._vehicles == {8: 42} and not native.cleanup_verified
+
+
+@pytest.mark.parametrize("tracked_owner", [None, 99])
+def test_update_guard_never_adopts_untracked_owned_vehicle(settings, tracked_owner):
+    lookup = connection_with((TEST_DATABASE,), (8,))
+    native, _ = owned_native(settings, lookup)
+    if tracked_owner is not None:
+        native._vehicles[8] = tracked_owner
+    before = native._vehicles.copy()
+    with pytest.raises(TestDatabaseSafetyError, match="Only tracked"):
+        native.require_reserved_vehicle(8, 42)
+    assert native._vehicles == before
+
+
+def test_missing_or_foreign_fixture_vehicle_is_left_for_normal_not_found(settings):
+    lookup = connection_with((TEST_DATABASE,), None)
+    native, _ = owned_native(settings, lookup)
+    native.require_reserved_vehicle(8, 42)
+    assert not native._vehicles
+    assert lookup.execute.call_args.args[1] == (8, 42)
+
+
+def test_edited_vehicle_cleanup_uses_tracked_identity_when_original_values_no_longer_match(settings, vehicle):
+    reserve = connection_with((TEST_DATABASE,), None)
+    writer = connection_with((TEST_DATABASE,), (42,), [], [], None, None)
+    reader = connection_with((TEST_DATABASE,), [], [], [])
+    native, _ = owned_native(settings, reserve, writer, reader)
+    native.reserve_vehicle(42, vehicle)
+    native._vehicles[8] = 42
+    native.cleanup()
+    calls = [call.args for call in writer.execute.call_args_list]
+    assert calls[-2] == ("DELETE FROM public.vehicles WHERE id = %s AND user_id = %s", (8, 42))
+    assert calls[-1][0] == "DELETE FROM public.users WHERE id = %s AND email = %s"
+    assert writer is not reader and native.cleanup_verified and native.cleanup_vehicle_count == 1
+    assert reader.execute.call_args.args[1] == ([8], [42])

@@ -84,6 +84,9 @@ footer { color: #4b5a67; font-size: 0.9rem; }
 .vehicle-card dl { display: grid; gap: 0.75rem; margin-bottom: 0; }
 .vehicle-card dt { color: #40536a; }
 .vehicle-card dd { margin: 0; font-weight: 600; }
+.vehicle-profile { width: min(100%, 38rem); margin-block: 1.25rem; }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-block: 1.25rem; }
+.reading-confirmation { margin-top: 1.25rem; }
 .form-status { margin: 0; }
 .form-status:not(:empty) { margin-top: 1.25rem; }
 .visually-hidden {

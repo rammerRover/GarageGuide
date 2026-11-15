@@ -1,5 +1,257 @@
 # Manual browser verification
 
+## Feature 4 Step 5: complete and awaiting final review
+
+The user reported completing the complete Feature 4 checklist on November 14,
+2026 using Google Chrome 156.0.8078.73 in both Vite development and production
+preview, with everything working as specified. The full attributed report is in
+[vehicle profile verification](VEHICLE_PROFILE_STATUS.md). It covers routing and
+gating, view/edit/save/cancel/reload, persistence, null versus zero, confirmation
+and stale acknowledgment, two-account isolation, safe feedback, headers/deadline
+synchronization, no polling/retry, visible local expiry without network work,
+keyboard/focus/announcements, all three viewport widths and 200% zoom.
+
+The user reported that simulated failure cases were restored afterward; those
+are browser simulation evidence, not genuine PostgreSQL-outage or server
+revocation evidence. Legacy response simulation remains separate from persisted
+legacy-row behavior. No unreported malformed-path server behavior is inferred.
+Automated tests and earlier native PostgreSQL results remain separate. No agent
+browser run, new test execution or database connection is claimed by this update.
+
+The user reported this exact guarded-backend cleanup confirmation:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, and vehicles are absent.
+```
+
+Step 5 and this browser record were subsequently approved. Step 6 final automated/
+native verification and checkpoint preparation are recorded separately in
+VEHICLE_PROFILE_STATUS.md; they add no browser observations or reviewer claims.
+The following procedure is retained for repeatability. Its instructions and example
+scripts do not add unreported execution details to the user's observations.
+Historical Feature 1-3 evidence below remains unchanged.
+
+### Guarded setup and commands
+
+Use repository-root PowerShell terminals. Stop ordinary backends on port 8000.
+Use only the existing initialized `garageguide_app_test`; do not run schema SQL.
+Remove unintended database overrides privately without printing credentials.
+The launcher requires `RUN_DB_TESTS=1`, loads only `backend/.env.test`, verifies
+the effective database and `SELECT current_database()` as the first statement
+on every physical connection, and registers exact cleanup before writes.
+
+Terminal 1 (guarded backend; leave running until both environments finish):
+
+```powershell
+$env:RUN_DB_TESTS = "1"
+backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py
+```
+
+It prints three **reserved email addresses**, not accounts or passwords.
+Register accounts A and B at `/register` using two of these addresses and your
+own temporary passwords (15-128 Unicode characters, matching confirmation).
+Use those same passwords at `/login`. Do not use real users/vehicles, print
+passwords, inspect/copy cookie values, or export requests/screenshots with secrets.
+Use two independent Chrome profiles, or normal plus incognito; two incognito
+windows can share cookies. Give every synthetic vehicle a recognizable unique
+model, for example `GG-F4-DEV-A-<suffix>`. Both accounts must use only this launcher.
+
+Terminal 2 (set the existing Node PATH in each terminal that uses npm):
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run dev
+```
+
+Open `http://127.0.0.1:5173`. Repeat the checklist in preview, rebuilding first:
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run build
+npm --prefix frontend run preview
+```
+
+Open `http://127.0.0.1:4173`. Cookies are shared across ports on this host;
+check the signed-in account when changing environments. Do not start the ordinary
+uvicorn command, which uses development settings. The user starts these servers;
+the agent has not connected to PostgreSQL for Step 5.
+
+### Real routing, editing, confirmation and isolation
+
+1. Signed out, direct-load a known `/vehicles/ID` URL. No identity or profile may
+   flash before the session gate/login flow. Sign in as A, open the garage, and
+   use a heading Link. Test direct load, refresh, Back/Forward and switching
+   between two A-owned IDs. Repeat `/vehicles/ID/`, `/VEHICLES/ID`,
+   `/%76ehicles/ID` and an encoded digit (ID `7` would use `%37`; substitute your
+   actual ID). Every protected navigation validates the session before the
+   vehicle loads. `/vehicles/new` and encoded/case variants must open creation,
+   not a profile. `/vehicles/ID/other` must not display the profile.
+2. Invalid IDs (`01`, `0`, `-1`, `+1`, `1.0`, `2147483648`, letters, encoded
+   whitespace or non-ASCII digits) show a safe ID error and never old data.
+   Direct malformed percent paths may be rejected by Vite before React loads;
+   record that as a server-boundary result, not React browser coverage.
+3. Create A-owned vehicles with both readings, neither, confirmed zero and no
+   engine. Open each heading. Check ID, year/make/model/type/engine, readings,
+   creation time and reading-update time. Unknown is `Not recorded`; zero is
+   `0.0`. Edit text, preserve case/trim behavior, clear optional engine, Cancel
+   and verify no PATCH and no retained draft. Save must remain on the profile,
+   announce success and show committed data. Refresh to prove persistence.
+   Empty/unchanged edits must not send PATCH. Exercise blank required fields,
+   changed year boundaries, invalid decimal precision and field-error clearing.
+4. Exercise each reading: unknown to zero/positive, increase, equal value,
+   known to lower, known to null, zero to null, and both readings lowered or
+   cleared in one save. Lower/clear shows an inline focused confirmation with
+   exact current/proposed values (`Not recorded` for clearing). Cancel sends
+   nothing and preserves the draft. Editing any business field removes the
+   acknowledgment. Only Confirm and save changes sends the second PATCH.
+   Repeated click/Enter attempts during pending work produce one request.
+   No partial business update may appear after the first 409.
+5. For a real stale snapshot, keep two independent windows visibly open and
+   sign both into A. In window 1 propose a lower reading and stop at confirmation.
+   In window 2 change that same vehicle's reading, then confirm in window 1.
+   Expect another 409, no update, and required reload/review; no automatic replay.
+   Repeat with window 2 lowering below window 1's proposed value, so the stale
+   acknowledgment yields empty `fields`. Window 1 must require reload/review,
+   not an empty confirm panel. If a visibility recheck clears the draft first,
+   record that privacy behavior and repeat with both windows visible, or use
+   the explicitly labeled 409 simulations below for that branch.
+6. Reload vehicle first explains that the draft and confirmation will be
+   discarded. Keep current draft sends nothing. Discard draft and reload sends
+   GET only and shows the current row. A no-op/text-only save preserves reading
+   time; an actual reading change, including clearing the final known value,
+   updates it. Readings must never become floating-point artifacts.
+7. Sign B into the independent profile, create a B vehicle, and use B's ID in
+   A's address bar. Repeat A's ID as B. Missing and foreign-owned IDs show the
+   same safe 404; no foreign fields appear. For PATCH isolation, leave A's edit
+   page visible, sign into B in another tab of the **same** profile, return and
+   verify session revalidation clears A's draft before B can view/update it.
+   Real two-user API PATCH isolation is separately covered by guarded native
+   tests; do not claim this UI check sends a foreign PATCH it does not send.
+8. Test logout, same-account relogin, switching accounts, rejected sessions,
+   hidden tabs, page departure and Back/Forward with pending GET/PATCH. Delayed
+   responses must never restore old identity, vehicle, draft or confirmation.
+   A vehicle-only outage may retain a correctable draft; authentication
+   unavailability must hide/clear all private content behind the session gate.
+9. Inspect only safe Network metadata: successful detail GET/PATCH are 200 with
+   `Cache-Control: no-store` and `X-GarageGuide-Session-Expires-At`. Errors have
+   no-store and no deadline. PATCH has JSON, CSRF marker and trusted browser
+   Origin. No session request is made solely to synchronize a successful
+   vehicle response's deadline. No periodic vehicle/session polling or mutation
+   retry occurs. Keep the detail/edit page visible and truly idle until its
+   full current local deadline: identity, profile, draft and confirmation must
+   clear without any expiry-triggered request. Deliberate later navigation,
+   refresh, visibility return or Retry may validate again. Record real duration.
+10. Verify keyboard-only Edit/Save/Cancel/confirm/reload/navigation, visible
+    focus, associated labels/errors, first-error focus, confirmation heading
+    focus, success/status announcements and unavailable/not-found focus. Check
+    375/768/1440-pixel widths and 200% zoom without horizontal scrolling.
+    Repeat registration, login/logout, account, garage and create smoke checks.
+
+### Browser simulations - separate from real persistence/native evidence
+
+Use only the guarded backend. Install the following optional shim in DevTools
+on a canonical synthetic profile URL. Set `profileCheck.path` to the exact
+relative `/api/vehicles/ID` for that fixture and select `method` GET or PATCH.
+It reads no request body, password or cookie and logs nothing. Restore it before
+real tests and do not layer it over older shims. Counts are safe request totals.
+
+```javascript
+(() => {
+  const original = window.fetch.bind(window)
+  const check = { path: '/api/vehicles/REPLACE_WITH_SYNTHETIC_ID', method: 'PATCH', mode: 'off', calls: 0 }
+  check.restore = () => { window.fetch = original; delete window.profileCheck }
+  window.profileCheck = check
+  window.fetch = async (resource, options = {}) => {
+    if (resource !== check.path || (options.method ?? 'GET') !== check.method || check.mode === 'off') {
+      return original(resource, options)
+    }
+    check.calls += 1
+    if (check.mode === 'network') throw new TypeError('Simulated network failure')
+    if (check.mode === 'timeout') return new Promise((resolve, reject) => {
+      const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+      if (options.signal?.aborted) abort()
+      else options.signal?.addEventListener('abort', abort, { once: true })
+    })
+    // Real guarded PATCH may commit; deliberately lose only its browser response.
+    if (check.mode === 'lost-response') { await original(resource, options); throw new TypeError('Simulated lost response') }
+    if (check.mode === 'late') {
+      const response = await original(resource, options)
+      await new Promise((resolve) => setTimeout(resolve, 5000))
+      return response
+    }
+    if (check.mode === 'legacy' && check.method === 'GET') {
+      const response = await original(resource, options)
+      if (!response.ok) return response
+      const body = await response.json()
+      return new Response(JSON.stringify({ ...body, year: 1800 }), { status: response.status, headers: response.headers })
+    }
+    if (check.mode === 'malformed') return new Response('invalid JSON', { status: 200 })
+    const outcomes = {
+      missing: [404, { detail: 'Vehicle not found.' }],
+      rejected: [401, { detail: 'Not authenticated.' }],
+      forbidden: [403, { detail: 'Request not allowed.' }],
+      authentication: [503, { detail: 'Authentication unavailable. Please try again.' }],
+      unavailable: [503, { detail: 'Vehicles unavailable. Please try again.' }],
+      unexpected: [500, { detail: 'Internal server error' }],
+      confirmation: [409, { detail: 'Reading changes require confirmation.', fields: ['mileage'], current_readings: { mileage: '1000.0' } }],
+      stale: [409, { detail: 'Reading changes require confirmation.', fields: [], current_readings: {} }],
+    }
+    const [status, body] = outcomes[check.mode] ?? outcomes.unexpected
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
+  }
+})()
+```
+
+- For GET, simulate missing/rejected/authentication/unavailable/network/timeout/
+  malformed/unexpected. Restore real fetch before deliberate Retry/reload.
+  No private vehicle may appear before a current valid response. GET 403 is
+  safe feedback, not a claim the normal GET requires mutation headers.
+- For PATCH, simulate forbidden, authentication, unavailable, network, timeout,
+  malformed and unexpected. Authentication rejection/unavailability gates private
+  content. Correctable vehicle failures retain draft; uncertain changes show
+  exactly: `The update may have completed. Reload this vehicle and check its
+  current values before submitting again.` No replay occurs. Use lost-response
+  once for an ordinary text edit, restore, then deliberately reload to inspect
+  the actual committed result. This is response-loss simulation, not DB outage.
+- For confirmation simulation, begin with fixture mileage `1000.0` and propose
+  `900.0`; mode confirmation returns the restricted 409. Confirming again in
+  that mode must require reload/review. For the empty-fields branch, first get
+  the initial confirmation, switch mode to stale, then explicitly confirm.
+  No matched simulated 409 writes reach PostgreSQL.
+- For late mode, start a GET or ordinary text PATCH then navigate to another
+  ID/logout/change account within five seconds. A forwarded PATCH may commit;
+  its late response must not restore stale page state. Restore and deliberately
+  inspect the exact fixture afterward. Do not infer rollback from cancellation.
+- Legacy-year UI coverage: select method GET and mode legacy for the fixture.
+  This forwards the guarded GET and changes only its returned year to `1800`,
+  preserving the public shape and headers. Reload, open Edit, change only model,
+  restore the shim before Save, and inspect that PATCH omits year. The genuine PATCH
+  returns the actual stored year. Separately test changing year to an invalid
+  new value. Label this synthetic response coverage; real persisted legacy-year
+  behavior is covered by native/API tests, not this browser response simulation.
+- Finish with `profileCheck.restore()`. A shim
+  401 does not itself revoke the server session or clear an HttpOnly cookie.
+  Reconcile with real logout/login afterward. Simulated statuses do not prove
+  a genuine PostgreSQL outage, server cookie deletion or real expiration.
+
+### Cleanup and report
+
+Restore shims/blocking, sign out both users, and stop the guarded backend with
+Ctrl+C. Wait for this exact message before claiming cleanup or Step 5 acceptance:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, and vehicles are absent.
+```
+
+The launcher deletes only exact tracked synthetic vehicles (ID plus fixture
+owner) before fixture sessions/users and verifies absence through separate
+guarded connections. Do not force-kill, truncate, broadly delete, reset sequences
+or manually clean ordinary data. If cleanup is not confirmed, stop and report it.
+Report execution date, exact browser version, development/preview cases, real
+observations, simulated cases, actual full idle observation, limitations and
+exact cleanup output. The November 14 report above supplies the user-observed
+acceptance and exact cleanup; Step 5 was subsequently approved.
+
 ## Feature 3 Step 4: complete for review with user-reported cleanup
 
 The user reported browser observations on November 13, 2026 in Chrome
