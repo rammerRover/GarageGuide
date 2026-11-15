@@ -21,7 +21,7 @@ Plan must not be introduced during these feature loops.
   user to add cars and recreational vehicles using manual year, make, model,
   engine, type, mileage, and/or operating-hour information, then display only
   that user's vehicles.
-- [ ] 4. **View and update a vehicle profile.** Let the owner review and correct
+- [x] 4. **View and update a vehicle profile.** Let the owner review and correct
   vehicle details and current readings while preserving readings already saved
   with historical service records.
 - [ ] 5. **Record and review service history.** Create, list, edit, and remove
