@@ -7,6 +7,10 @@ export const serviceFields = ['service_date', 'service_type', 'description', 'mi
 export const serviceTypes = ['maintenance', 'repair', 'inspection', 'diagnostic']
 const text = (value) => typeof value === 'string' && value.isWellFormed() && !value.includes('\0')
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
+// Python str.strip() includes NEL and U+001C–U+001F and preserves U+FEFF.
+// eslint-disable-next-line no-control-regex -- Python treats these four controls as whitespace.
+const trimServiceText = (value) => value.replace(/^[\p{White_Space}\u001c-\u001f]+|[\p{White_Space}\u001c-\u001f]+$/gu, '')
+const isCanonicalText = (value) => text(value) && value.length > 0 && trimServiceText(value) === value
 export const serviceMessages = {
   service_date: 'Enter a valid service date on or before today using YYYY-MM-DD.',
   service_type: 'Choose maintenance, repair, inspection, or diagnostic.',
@@ -46,8 +50,7 @@ export function isPublicService(record) {
   if (!object(record) || Object.keys(record).length !== keys.length || !keys.every((key) => Object.hasOwn(record, key)) ||
       ![record.id, record.vehicle_id].every((id) => Number.isInteger(id) && isVehicleId(String(id))) ||
       !isServiceDate(record.service_date) || !serviceTypes.includes(record.service_type) ||
-      !text(record.description) || !record.description.trim() || record.description.trim() !== record.description ||
-      !(record.notes === null || (text(record.notes) && record.notes.trim() && record.notes.trim() === record.notes)) ||
+      !isCanonicalText(record.description) || !(record.notes === null || isCanonicalText(record.notes)) ||
       !parseSessionDeadline(record.created_at)) return false
   return ['mileage', 'operating_hours', 'cost'].every((key) => record[key] === null ||
     (typeof record[key] === 'string' && decimal(record[key], key === 'cost') === record[key]))
@@ -77,8 +80,9 @@ export function prepareServiceInput(values, current = null) {
       if (value === undefined) { errors[key] = serviceMessages[key]; continue }
     } else {
       if (key === 'notes' && value === null) value = ''
-      if (!text(value) || (key === 'description' && !value.trim())) { errors[key] = serviceMessages[key]; continue }
-      value = value.trim() || null
+      if (!text(value)) { errors[key] = serviceMessages[key]; continue }
+      value = trimServiceText(value) || null
+      if (key === 'description' && value === null) { errors[key] = serviceMessages[key]; continue }
     }
     if (!current || value !== current[key]) details[key] = value
   }

@@ -27,13 +27,42 @@ test('successful create clears its draft and reloads via GET; successful save st
   assert.equal(f.store.getSnapshot().editing, false)
   h.store.dispose(); f.store.dispose()
 })
-test('a failed GET after confirmed creation still reports success and blocks accidental reposting', async () => {
+test('correcting an invalid second entry after a successful history refresh allows another create', async () => {
+  const f = await loaded('history')
+  fill(f.store)
+  assert.equal((await f.store.submit()).kind, 'success')
+  assert.equal(f.calls.list.length, 2)
+
+  fill(f.store)
+  f.store.edit('description', ' ')
+  assert.equal((await f.store.submit()).kind, 'invalid')
+  assert.equal(f.calls.create.length, 1)
+  f.store.edit('description', 'Corrected second entry')
+  assert.equal((await f.store.submit()).kind, 'success')
+  assert.equal(f.calls.create.length, 2)
+  assert.equal(f.calls.create[1][1].description, 'Corrected second entry')
+  assert.equal(f.calls.list.length, 3)
+  f.store.dispose()
+})
+for (const failure of ['unavailable', 'not-found']) test(`a failed history GET (${failure}) after confirmed creation blocks another create until a refresh succeeds`, async () => {
   let reads = 0
-  const f = await loaded('history', { listServices: async () => ++reads === 1 ? { kind: 'success', services: [], deadline: stamp() } : { kind: 'unavailable' } })
+  const f = await loaded('history', {
+    listServices: async () => [2, 3].includes(++reads)
+      ? { kind: failure, message: 'History could not be loaded.' } : { kind: 'success', services: [], deadline: stamp() },
+  })
   fill(f.store); assert.equal((await f.store.submit()).kind, 'success')
   assert.match(f.store.getSnapshot().message, /created, but history could not be reloaded/)
   fill(f.store); assert.equal((await f.store.submit()).kind, 'cancelled')
   assert.equal(f.calls.create.length, 1)
+  assert.equal(f.store.requestReload(), true)
+  assert.equal((await f.store.reload()).kind, failure)
+  assert.equal((await f.store.submit()).kind, 'cancelled')
+  assert.equal(f.calls.create.length, 1)
+  assert.equal(f.store.requestReload(), true)
+  assert.equal((await f.store.reload()).kind, 'success')
+  if (failure === 'not-found') fill(f.store)
+  assert.equal((await f.store.submit()).kind, 'success')
+  assert.equal(f.calls.create.length, 2)
   f.store.dispose()
 })
 for (const kind of ['invalid', 'conflict', 'forbidden']) test(`correctable ${kind} preserves draft and committed record`, async () => {

@@ -2,6 +2,7 @@ import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from itertools import product
+from pathlib import Path
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -15,6 +16,23 @@ from app.vehicle_schemas import VehicleId
 
 
 pytestmark = pytest.mark.usefixtures("forbid_database")
+
+
+def test_service_text_matches_shared_frontend_history_response():
+    fixture = Path(__file__).resolve().parents[2] / "frontend/tests/fixtures/serviceWhitespace.json"
+    contract = json.loads(fixture.read_text(encoding="utf-8"))
+    expected = contract["response"]
+    records = []
+    for index, row in enumerate(expected["services"]):
+        fields = {key: row[key] for key in ServiceCreate.model_fields}
+        if index == 0:
+            fields.update(contract["input"])
+        created = ServiceCreate(**fields)
+        records.append(ServiceRecord(
+            **created.model_dump(), id=row["id"], vehicle_id=row["vehicle_id"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+        ))
+    assert ServiceListResponse(vehicle_id=expected["vehicle_id"], services=records).model_dump(mode="json") == expected
 
 
 @pytest.fixture(autouse=True)

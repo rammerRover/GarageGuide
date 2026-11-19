@@ -5,11 +5,12 @@ import { isVehicleId } from './vehicleValidation.js'
 
 export const serviceReloadWarning = 'Reloading discards your unsaved service changes and removal confirmation. Reload and inspect the saved record?'
 export const serviceRemovalWarning = 'Permanently remove this record? It may include newer concurrent edits. Linked records prevent removal. This cannot be undone.'
+const createRefreshWarning = 'Service record created, but history could not be reloaded. Reload history before adding another record.'
 const empty = (vehicleId = null, serviceId = null, authenticationGeneration = null) => ({
   vehicleId, serviceId, authenticationGeneration, requestGeneration: 0, status: 'idle',
   records: [], record: null, draft: serviceDraft(), editing: false, confirmation: false, loaded: false,
   pending: false, errors: {}, message: '', focusVersion: 0, reloadPrompt: false,
-  uncertainOperation: null, inspected: false, created: false,
+  uncertainOperation: null, inspected: false, created: false, historyRefreshRequired: false,
 })
 const same = (a, b) => a === b || Boolean(a && b && a.generation === b.generation && a.location === b.location && a.user === b.user)
 
@@ -62,7 +63,7 @@ function createStore(mode, session, api, now) {
       return { kind: 'cancelled' }
     }
     const mutation = operation !== 'load'
-    if (state.pending || (mutation && state.uncertainOperation) || (operation === 'create' && state.created && state.status !== 'ready') || (operation === 'update' && (!state.editing || !state.record)) ||
+    if (state.pending || (mutation && state.uncertainOperation) || (operation === 'create' && state.historyRefreshRequired) || (operation === 'update' && (!state.editing || !state.record)) ||
         (operation === 'remove' && (!state.confirmation || !state.record))) return { kind: 'cancelled' }
     const committed = state.record, draft = { ...state.draft }
     if (operation === 'create' || operation === 'update') {
@@ -100,7 +101,7 @@ function createStore(mode, session, api, now) {
     active = null
     if (result.kind === 'success') {
       if (operation === 'create') {
-        publish({ pending: false, created: true, draft: serviceDraft(), status: 'created', message: 'Service record created.' })
+        publish({ pending: false, created: true, historyRefreshRequired: true, draft: serviceDraft(), status: 'created', message: 'Service record created.' })
         // This GET follows a confirmed user mutation. Its failure must not invite another POST.
         await run('load')
         return !disposed && !departed && state.created && state.vehicleId === request.vehicleId && same(request.context, context())
@@ -109,7 +110,8 @@ function createStore(mode, session, api, now) {
       if (operation === 'remove') {
         publish({ ...empty(state.vehicleId, state.serviceId, state.authenticationGeneration), status: 'removed', message: 'Service record removed.', focusVersion: state.focusVersion + 1 })
       } else if (mode === 'history') {
-        publish({ pending: false, records: result.services, loaded: true, status: 'ready', inspected: Boolean(state.uncertainOperation), focusVersion: state.focusVersion + 1,
+        publish({ pending: false, records: result.services, loaded: true, status: 'ready', historyRefreshRequired: false,
+          inspected: Boolean(state.uncertainOperation), focusVersion: state.focusVersion + 1,
           message: state.uncertainOperation ? uncertainServiceMessages.create : state.created ? 'Service record created.' : '' })
       } else {
         publish({ pending: false, record: result.record, draft: serviceDraft(result.record), editing: false, status: 'ready',
@@ -118,14 +120,16 @@ function createStore(mode, session, api, now) {
     } else if (result.kind === 'not-found') {
       const absentRemoval = state.uncertainOperation === 'remove'
       publish({ ...empty(state.vehicleId, state.serviceId, state.authenticationGeneration), status: 'not-found',
-        message: absentRemoval ? 'The record is currently absent. This does not establish which request removed it.' : result.message, focusVersion: state.focusVersion + 1 })
+        created: state.historyRefreshRequired, historyRefreshRequired: state.historyRefreshRequired,
+        message: absentRemoval ? 'The record is currently absent. This does not establish which request removed it.'
+          : state.historyRefreshRequired ? `${createRefreshWarning} ${result.message}` : result.message, focusVersion: state.focusVersion + 1 })
     } else if (['guest', 'authentication-unavailable'].includes(result.kind)) {
       clear()
     } else {
       const uncertain = mutation && (result.uncertain || ['uncertain', 'network', 'unexpected', 'cancelled', 'unavailable', 'reload-required'].includes(result.kind))
       publish({ pending: false, status: uncertain ? 'uncertain' : result.kind, errors: result.errors ?? {},
         uncertainOperation: uncertain ? operation : state.uncertainOperation,
-        message: uncertain ? uncertainServiceMessages[operation] : state.created ? 'Service record created, but history could not be reloaded. Reload history before adding another record.' : result.message ?? '',
+        message: uncertain ? uncertainServiceMessages[operation] : state.historyRefreshRequired ? createRefreshWarning : result.message ?? '',
         focusVersion: state.focusVersion + 1 })
     }
     return result

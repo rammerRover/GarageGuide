@@ -37,7 +37,7 @@ function ServiceHistoryView({ store, vehicleId }) {
     ;(first ? inputs.current[first] : feedback.current)?.focus()
   }, [state.focusVersion, state.pending, state.errors])
   const uncertain = Boolean(state.uncertainOperation)
-  const blocked = state.pending || uncertain || (state.created && state.status !== 'ready')
+  const blocked = state.pending || uncertain || state.historyRefreshRequired
   return <section aria-labelledby="service-history-title" aria-busy={state.pending}>
     <div className="intro">
       <p className="eyebrow">Your vehicle</p>
@@ -68,7 +68,7 @@ function ServiceHistoryView({ store, vehicleId }) {
         <p>Leaving this page discards the temporary form.</p>
       </form>
     </>}
-    {!state.pending && !['invalid', 'not-found', 'gated'].includes(state.status) && <div className="profile-actions">
+    {!state.pending && (state.historyRefreshRequired || !['invalid', 'not-found', 'gated'].includes(state.status)) && <div className="profile-actions">
       <button type="button" onClick={() => { if (store.requestReload()) requestAnimationFrame(() => reloadHeading.current?.focus()) }}>
         {state.loaded ? 'Reload history and inspect' : 'Try again'}</button>
     </div>}

@@ -734,3 +734,24 @@ or committed. The index remains empty. No dependency, schema, build-plan, workfl
 configuration, or private environment changes are included. Frontend request and
 state logic is included through Step 6; Step 7 pages have passing automated
 checks and user-performed development/preview browser acceptance.
+
+### User-performed F-01 and F-02 repair checks
+
+In response to the focused browser checklist for Vite development and production
+preview, the user reported "everything passed." This was a checklist-level pass
+report for the repairs to the second-entry validation and history-refresh flows
+(F-01) and the mixed Unicode service history flow (F-02). The failed-refresh
+case in the checklist uses a simulated GET failure. The user supplied this
+exact guarded backend cleanup message:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.
+```
+
+This report applies to the repairs based on checkpoint
+`6779cdefa13de9d45f3b0cc968089900037334c6`. It is separate from the original
+November 18, 2026 browser report and the recorded 441 native PostgreSQL passes.
+No browser version, test date, or additional case-by-case observations were
+supplied for this focused run. The agent did not rerun browser checks or connect
+to PostgreSQL to record this report. Both findings remain open pending a fresh
+independent review of the approved repair checkpoint.

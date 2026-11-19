@@ -1,0 +1,35 @@
+{
+  "input": {
+    "description": "\u0085\u001c\ufeffSynthetic \ufeffdescription\ufeff\u2003",
+    "notes": "\u0085\ufeff\u001f"
+  },
+  "response": {
+    "vehicle_id": 7,
+    "services": [
+      {
+        "id": 9,
+        "vehicle_id": 7,
+        "service_date": "2026-11-17",
+        "service_type": "maintenance",
+        "description": "\ufeffSynthetic \ufeffdescription\ufeff",
+        "mileage": "0.0",
+        "operating_hours": null,
+        "cost": "0.00",
+        "notes": "\ufeff",
+        "created_at": "2026-11-18T11:00:00Z"
+      },
+      {
+        "id": 8,
+        "vehicle_id": 7,
+        "service_date": "2026-11-17",
+        "service_type": "maintenance",
+        "description": "Synthetic maintenance",
+        "mileage": "0.0",
+        "operating_hours": null,
+        "cost": "0.00",
+        "notes": null,
+        "created_at": "2026-11-18T11:00:00Z"
+      }
+    ]
+  }
+}

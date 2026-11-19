@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { createService, getService, listServices, removeService, updateService } from '../src/api.js'
 import { isPublicService, isServiceDate, prepareServiceInput, serviceDraft, serviceMessages } from '../src/serviceValidation.js'
-import { input, record, stamp } from './serviceFixtures.js'
+import { input, loaded, record, stamp } from './serviceFixtures.js'
 
 const operations = ['list', 'detail', 'create', 'update', 'remove']
 const call = (op, signal) => ({ list: () => listServices('7', signal), detail: () => getService('7', '8', signal),
@@ -128,6 +129,22 @@ test('changed-only PATCH preserves legacy dates, clears optional blanks and dist
   assert.equal(prepareServiceInput(serviceDraft(legacy), legacy).unchanged, true)
   assert.deepEqual(prepareServiceInput({ description: '  New  ' }, record).details, { description: 'New' })
   assert.equal(prepareServiceInput({ ...input, service_date: '9999-12-31' }).invalid, false)
+})
+test('history exposes both entries from the shared backend whitespace response', async (t) => {
+  const contract = JSON.parse(readFileSync(new URL('./fixtures/serviceWhitespace.json', import.meta.url), 'utf8'))
+  const [affected, ordinary] = contract.response.services
+  mockFetch(t, async () => respond('list', contract.response))
+  const { store } = await loaded('history', { listServices })
+  t.after(() => store.dispose())
+  assert.equal(store.getSnapshot().loaded, true)
+  assert.deepEqual(store.getSnapshot().records, [affected, ordinary])
+  const prepared = prepareServiceInput({ ...input, ...contract.input })
+  assert.equal(prepared.invalid, false)
+  assert.equal(prepared.details.description, affected.description)
+  assert.equal(prepared.details.notes, affected.notes)
+  assert.deepEqual(prepareServiceInput({ ...serviceDraft(affected), cost: '10.00' }, affected).details, { cost: '10.00' })
+  assert.equal(prepareServiceInput({ notes: '\u0085\u001c' }, affected).details.notes, null)
+  assert.equal(prepareServiceInput({ description: '\u0085\u001c' }, affected).invalid, true)
 })
 for (const value of [0, undefined, '-1', '+1', '1e2', 'NaN', 'Infinity', '1,000', '1.01', '100000000000.0', '١']) test(`invalid reading ${JSON.stringify(value)}`, () => {
   assert.equal(prepareServiceInput({ ...input, mileage: value }).invalid, true)
