@@ -36,6 +36,17 @@ def native_database(request, monkeypatch):
                     f"Verified exact cleanup: {users} synthetic users and {sessions} tracked "
                     f"sessions and {native.cleanup_vehicle_count} vehicles absent from garageguide_app_test."
                 )
+                if native.cleanup_service_count:
+                    print(
+                        f"Verified exact service cleanup: {native.cleanup_service_count} synthetic "
+                        "service records absent from garageguide_app_test."
+                    )
+                if any(native.cleanup_link_counts):
+                    parts, completions, schedules = native.cleanup_link_counts
+                    print(
+                        f"Verified exact linked cleanup: {parts} part snapshots, {completions} "
+                        f"maintenance completions, and {schedules} schedules absent from garageguide_app_test."
+                    )
         except BaseException:
             request.session.shouldstop = "Native cleanup failed; resolve tracked fixtures before continuing"
             raise

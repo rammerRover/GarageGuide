@@ -1,5 +1,273 @@
 # Manual browser verification
 
+## Feature 5 Step 7: user-performed browser verification complete
+
+The user reported manually running the Feature 5 browser checklist on November
+18, 2026, with all checks run passing, using browser version 157.0.8103.79.
+In a follow-up clarification, the user explicitly confirmed completing the
+entire checklist in BOTH Vite development and production preview.
+
+These are user-performed observations, not agent/reviewer browser execution.
+Real service behavior and the checklist's simulated failure cases remain
+separate; simulations do not prove a PostgreSQL outage or server revocation.
+No additional per-case outcome or numeric idle duration is inferred from the
+general pass report. Automated/native PostgreSQL evidence remains separately
+recorded in SERVICE_HISTORY_STATUS.md; no tests or PostgreSQL connections were
+rerun to record these observations.
+
+The user reported this exact guarded-backend cleanup confirmation:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.
+```
+
+Both required browser modes and exact cleanup are confirmed. Step 7 was approved;
+Step 8 final automated/native results are recorded separately in
+SERVICE_HISTORY_STATUS.md and add no browser observations. The procedure below is retained for
+repeatability and is not additional execution evidence. Historical Feature 1-4
+records remain unchanged.
+
+### Feature 5 guarded setup
+
+Stop ordinary backend servers on port 8000. Use only the existing initialized
+garageguide_app_test. Do not run SQL schema scripts, fixture SQL by hand,
+ordinary production/development backends, or database reset commands. The
+launcher loads only backend/.env.test, requires explicit RUN_DB_TESTS=1 and the
+effective test database, and checks SELECT current_database() as the first
+statement on every physical connection before exposing it. Remove conflicting
+database environment overrides privately; never print credentials.
+
+In terminal 1, from repository root:
+
+```powershell
+$env:RUN_DB_TESTS = "1"
+backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py --service-links
+```
+
+The launcher prints three reserved synthetic **email addresses**, not precreated
+accounts or passwords. At /register, create A and B with the first two addresses
+and C with the third. Choose your own temporary 15-128-character passwords and
+use those same passwords at /login. Use two independent browser profiles or
+normal/incognito for A and B (two incognito windows may share cookies). Do not
+use ordinary accounts/data, copy cookie values, log passwords, or export request
+bodies/screenshots containing secrets. Access logging is disabled in this
+test-only backend. Keep the backend running through dev and preview.
+
+Create distinct synthetic vehicles under A and B. Their histories start empty.
+With --service-links, only C's newly created vehicles receive two synthetic
+records: "Synthetic part-linked service" and "Synthetic completion-linked
+service". These are test fixtures, not parts/schedule product functionality.
+All service creations are reserved before writes. Edits/removal use immutable
+tracked service/vehicle/owner IDs; missing/foreign/wrong-parent records still
+reach the normal safe 404. No fixture may adopt an ordinary existing record.
+
+Terminal 2:
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run dev
+```
+
+Use http://127.0.0.1:5173. In another terminal with the same Node PATH, build
+and start preview when ready; keep the same guarded backend:
+
+```powershell
+npm --prefix frontend run build
+npm --prefix frontend run preview
+```
+
+Use http://127.0.0.1:4173. Sign in separately for preview; use new synthetic
+vehicle/description suffixes so dev and preview evidence can be distinguished.
+Do not start an ordinary uvicorn backend. If setup/guard/cleanup fails, stop;
+do not switch to another database or broadly delete records to continue.
+
+### Feature 5 real browser checklist — repeat in dev and preview
+
+1. **Routes and gates:** From Account, open the garage, an owned profile, then
+   Service history. Direct-load/refresh /vehicles/V/services and
+   /vehicles/V/services/S (substitute your exact synthetic IDs). Repeat with
+   trailing slashes, uppercase static segments, and percent-encoded static
+   segments/ASCII ID digits. Leave via a Link and use Back/Forward as well as
+   refresh. Authentication and business-loading gates must precede private
+   history/identity. /vehicles/new must still open vehicle creation.
+   Invalid IDs (01, 0, +1, 1.0, overflow, non-ASCII digits) and unrelated suffixes
+   must show no cached service records. If Vite rejects a malformed direct HTTP
+   path before React loads, record it as a server-boundary result only.
+2. **Empty/list/create:** A's new vehicle has no services. Open its history and
+   create maintenance, repair, inspection, and diagnostic records with dates and
+   descriptions. Check newest service date first, then creation/id for ties.
+   Create with neither reading/cost, mileage only, hours only, both readings,
+   and confirmed zero readings/cost. Unknown values show Not recorded; zero
+   readings show 0.0 and confirmed-free cost shows USD 0.00. Use exact decimal
+   controls (for example 12345.6, 45.7, USD 42.50). Successful creation clears
+   the form, then GET reloads history. Repeated clicks/Enter while pending must
+   produce one POST. Identical deliberate records remain allowed.
+3. **Fields/validation:** Required date/type/description must be labeled. Only
+   four types are offered. Invalid/blank required text, impossible date, a
+   future date (9999-12-31), negative/exponent/comma/excess-precision decimals,
+   and overflow must give safe field errors, first-error focus, and corrected
+   field-error clearing. The backend decides today; do not infer its day from
+   the browser time zone. Optional blank notes become null. No raw error/input
+   or driver information appears. There is no file upload or parts editor.
+4. **Detail/edit/cancel:** Open a saved entry from history. Enter Edit, change
+   values, then Cancel edit. It must send no PATCH and show the saved values.
+   Save text/date/type changes and reload to confirm persistence. Save reading
+   decreases and clear known mileage/hours/cost/notes to blank; no odometer
+   confirmation is required for these historical snapshots. Inspect PATCH
+   field names only: unchanged business fields are omitted; cleared optional
+   values are null; zero stays an exact decimal string. No empty PATCH is sent.
+   Save stays on detail and shows the committed response. Returning to the
+   vehicle profile proves current mileage/hours/readings_updated_at unchanged.
+5. **Removal:** Remove opens an inline confirmation explaining permanence and
+   possible newer concurrent edits. Cancel removal sends no DELETE and retains
+   the record/draft. Confirm once: one DELETE with literal confirm_removal true,
+   then return to history and GET reload; the entry is absent. The old detail
+   URL/repeated removal request returns the same safe 404. No automatic replay,
+   force option, child-data disclosure, or undo promise is offered.
+6. **Linked records, real backend:** Sign in as C and create a synthetic vehicle.
+   Its two seeded service descriptions identify the test cases. Part-linked
+   service edits succeed but removal returns the fixed linked-data conflict.
+   Completion-linked actual edits return the fixed completion conflict;
+   removal is also blocked. Cancel/unchanged saves perform no mutation in the
+   UI; no-op API success is separately covered by native tests. Reload after
+   each blocked operation: the saved service and vehicle readings are unchanged.
+   Do not inspect child data or delete links to bypass protection. Native tests
+   separately prove child-row integrity and real locking; browser UI alone
+   cannot establish those database assertions.
+7. **Ownership:** In independent A/B browsers, create records under each one's
+   vehicles. Neither history includes the other's data. Try B's parent/history
+   and service URLs while signed in as A and vice versa. Also put A's service
+   ID under another vehicle A owns. Missing/foreign/wrong-parent individual
+   cases show the same fixed Service record not found; collection parent cases
+   show Vehicle not found. Neither can create under the other's vehicle, edit,
+   or remove the other's service. Use only these synthetic IDs. Preserve safe
+   status/body observations; no unscoped existence information should appear.
+8. **Sessions/headers:** Inspect safe Network response metadata: no-store on
+   service success/errors and Session-Expires-At only on successful 200/201.
+   Current successful service responses update the local deadline without an
+   extra /api/auth/session request solely for synchronization. Errors do not
+   extend it. Protected navigation, refresh, visibility return, and deliberate
+   retry may revalidate. Leave the page visible and inactive until the actual
+   last returned local deadline: identity, records, drafts, and confirmation
+   clear without an expiry-triggered request, polling, or automatic retry.
+   Report the real waiting duration; fake-clock tests are not this observation.
+9. **Stale work/isolation:** Throttle/delay a service GET or write, then navigate
+   between vehicles/records, Back/Forward, log out, switch accounts, relogin as
+   the same account, hide/return, or reach expiry. Old successes/errors must
+   never restore old records/drafts, claim current success, or extend a newer
+   deadline. A rejected session hides all private content. An unavailable
+   session gates it and offers deliberate retry. Logout one independent browser;
+   the other remains independent. Restore all network controls before real retry.
+10. **Accessibility/layout:** Keyboard-only navigation, labels, field-error
+    associations, first-error focus, status announcements, confirmation focus,
+    Cancel returning focus, and explained disabled/pending controls work. Check
+    long descriptions/notes and Not recorded/zero at 375, 768, and 1440 pixels
+    and 200% zoom without horizontal scrolling or clipped controls.
+
+### Feature 5 simulated failures and uncertain writes
+
+These simulations are not evidence of a PostgreSQL outage, actual session
+revocation, or the backend's transaction/failure ordering. Run them only against
+the guarded backend. The following optional DevTools shim keeps no request
+bodies, passwords, cookies, or record values and logs nothing. Install once;
+do not layer it with other fetch shims. Select a method and mode, exercise one
+case, then restore real fetch before real inspection.
+
+```javascript
+(() => {
+  const original = window.fetch.bind(window)
+  const check = { method: 'GET', mode: 'off', calls: 0 }
+  check.restore = () => { window.fetch = original; delete window.serviceCheck }
+  window.serviceCheck = check
+  window.fetch = async (url, options = {}) => {
+    const method = options.method || 'GET'
+    if (typeof url !== 'string' || !/^\/api\/vehicles\/[1-9][0-9]*\/services(?:\/[1-9][0-9]*)?$/.test(url) ||
+        method !== check.method || check.mode === 'off') return original(url, options)
+    check.calls += 1
+    if (check.mode === 'network') throw new TypeError('Simulated network failure')
+    if (check.mode === 'timeout') return new Promise((resolve, reject) => {
+      const abort = () => reject(new DOMException('Aborted', 'AbortError'))
+      if (options.signal?.aborted) abort()
+      else options.signal?.addEventListener('abort', abort, { once: true })
+    })
+    if (check.mode === 'commit-lost') {
+      // Only use with POST/PATCH/DELETE: the real guarded mutation runs once.
+      if (method === 'GET') throw new TypeError('Select a mutation method first')
+      const response = await original(url, options)
+      if (!response.ok) return response
+      await response.body?.cancel()
+      return new Response('invalid JSON', { status: method === 'POST' ? 201 : 200 })
+    }
+    if (check.mode === 'malformed') return new Response('invalid JSON', { status: method === 'POST' ? 201 : 200 })
+    const cases = {
+      unavailable: [503, 'Service history unavailable. Please try again.'],
+      authentication: [503, 'Authentication unavailable. Please try again.'],
+      rejected: [401, 'Not authenticated.'], forbidden: [403, 'Request not allowed.'],
+      unexpected: [500, 'Internal server error'],
+      conflict: [409, method === 'PATCH' ?
+        'Service record is linked to maintenance completion and cannot be changed.' :
+        'Service record has linked data and cannot be removed.'],
+    }
+    const [status, detail] = cases[check.mode] || cases.unexpected
+    return new Response(JSON.stringify({ detail }), { status, headers: { 'Content-Type': 'application/json' } })
+  }
+})()
+```
+
+- For GET, try unavailable/network/timeout/malformed/unexpected. Private history
+  must not be confused with an empty successful history. Restore fetch and use
+  Try again or Reload history. Also simulate rejected/authentication on a
+  service request: rejection clears private state, authentication availability
+  gates it. The existing auth-session shim below can test the navigation gate.
+- For POST/PATCH/DELETE, test unavailable/network/timeout/malformed/unexpected
+  and forbidden. There must be one request per deliberate submit/confirmation,
+  a ten-second timeout, no automatic retry, and no idle polling. Known validation
+  and linked conflicts keep correctable drafts; service-only availability keeps
+  drafts but applies mutation uncertainty. Clear all failure modes afterward.
+- For a valid POST with mode commit-lost, the real create runs but its success
+  body is deliberately lost. The form retains its draft, blocks submission, and
+  explains how to inspect date/type/description/readings/cost. Set mode off,
+  deliberately reload history, inspect, and verify the duplicate-risk warning.
+  Even an absent entry must not be described as proof of failure. Acknowledging
+  that risk only unlocks the form; it must not send another POST automatically.
+- For PATCH commit-lost, use a known unlinked record. The edit may have committed.
+  Resubmission is blocked. Reload explains draft discard and requires agreement;
+  restore real fetch and inspect saved values before editing again.
+- For DELETE commit-lost, use a disposable unlinked record and explicit removal
+  confirmation. No automatic replay occurs. Restore real fetch; deliberately
+  reload the record/history. A later 404 states only current absence, not which
+  request removed it. Real backend commit/rollback behavior is native evidence,
+  not inferred from the shim.
+- To test confirmed creation followed by failed history reload, first load a
+  normal history, then set method GET and mode unavailable, and submit a real
+  valid creation. POST must succeed but its follow-up GET fails. Feedback must
+  still say the record was created and block accidental reposting. Restore
+  mode off and reload history. Record this as a simulated GET failure.
+- Finish with serviceCheck.restore(); restore auth shims/throttling/blocking too.
+
+### Feature 5 exact cleanup and report
+
+Sign out all synthetic browsers, then Ctrl+C the guarded backend and wait for:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.
+```
+
+Cleanup recovers exact reserved creations if an acknowledgment was lost, removes
+only tracked/reserved child fixtures before services, then vehicles/sessions/users,
+and verifies absence through separate guarded connections. Unexpected children
+or any failed guard/cleanup stop verification; never truncate, broadly delete,
+reset sequences, run schema initialization, or declare a browser pass without
+the verified marker. The marker above is expected output, not an observation.
+
+Report date, exact browser/version, dev/preview results, real create/list/edit/
+remove/linked checks, two-account observations, actual idle duration, focus and
+viewport results, simulated failure modes and restoration, exact cleanup output,
+and anything unverified. Do not claim native test reruns or reviewer/browser
+execution from these instructions. The November 18 user report above satisfies
+Step 7's mode/cleanup acceptance. Separately authorized Step 8 verification is
+recorded in SERVICE_HISTORY_STATUS.md; this guide is not new execution evidence.
+
 ## Feature 4 Step 5: complete and awaiting final review
 
 The user reported completing the complete Feature 4 checklist on November 14,

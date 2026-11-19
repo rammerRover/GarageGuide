@@ -87,6 +87,7 @@ function VehicleDetailView({ store, vehicleId }) {
       {vehicle && !state.editing && (
         <div className="vehicle-card vehicle-profile">
           <h2>{vehicle.year} {vehicle.make} {vehicle.model}</h2>
+          <p><Link to={`/vehicles/${vehicle.id}/services`}>Service history</Link></p>
           <dl>
             <div><dt>Vehicle ID</dt><dd>{vehicle.id}</dd></div>
             {vehicleFields.map((name) => <div key={name}><dt>{labels[name]}</dt><dd>{vehicle[name] ?? 'Not recorded'}</dd></div>)}

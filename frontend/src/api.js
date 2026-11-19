@@ -1,4 +1,5 @@
 import { parseSessionDeadline } from './sessionDeadline.js'
+import { isPublicService, isServiceId, parseServiceErrors, prepareServiceInput, serviceIdMessage } from './serviceValidation.js'
 import {
   isPublicVehicle, isVehicleId, parseReadingConfirmation, parseVehicleErrors,
   prepareVehicleInput, prepareVehiclePatch, vehicleIdMessage,
@@ -367,4 +368,108 @@ export function updateVehicle(vehicleId, current, values, confirmation, signal) 
   if (prepared.invalid) return Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check your details and try again.' })
   if (prepared.unchanged) return Promise.resolve({ kind: 'unchanged', message: 'No changes to save.' })
   return vehicleRequest('PATCH', prepared.details, signal, vehicleId)
+}
+
+export const uncertainServiceMessages = {
+  create: 'Creation may have completed. Reload this vehicle’s history and inspect the date, type, description, readings, and cost. An absent entry does not prove failure; the original request may still finish. Resubmitting can create a duplicate.',
+  update: 'The edit may have completed. Reload the service record and inspect the saved values before editing again. Reloading discards your draft.',
+  remove: 'Removal may have completed. Reload the record or history before trying again. A later not-found response proves only that the record is currently absent, not which request removed it.',
+}
+const serviceUnexpected = (operation) => ({
+  kind: Object.hasOwn(uncertainServiceMessages, operation) ? 'uncertain' : 'unexpected',
+  uncertain: Object.hasOwn(uncertainServiceMessages, operation),
+  message: uncertainServiceMessages[operation] ?? 'Service history could not be loaded. Please try again.',
+})
+
+function serviceResult(operation, response, data, vehicleId, serviceId) {
+  const unexpected = serviceUnexpected(operation)
+  if (response.status === (operation === 'create' ? 201 : 200)) {
+    const deadline = parseSessionDeadline(response.headers.get('X-GarageGuide-Session-Expires-At'))
+    if (!deadline) return unexpected
+    if (operation === 'list') {
+      if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length !== 2 ||
+          !Object.hasOwn(data, 'vehicle_id') || String(data.vehicle_id) !== vehicleId || !Number.isInteger(data.vehicle_id) ||
+          !Array.isArray(data.services) || !data.services.every((record) => isPublicService(record) && String(record.vehicle_id) === vehicleId) ||
+          new Set(data.services.map((record) => record.id)).size !== data.services.length) return unexpected
+      return { kind: 'success', services: data.services, deadline }
+    }
+    if (operation === 'remove') {
+      return data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 3 &&
+        Number.isInteger(data.id) && String(data.id) === serviceId && Number.isInteger(data.vehicle_id) &&
+        String(data.vehicle_id) === vehicleId && data.deleted === true
+        ? { kind: 'success', removed: data, deadline } : unexpected
+    }
+    return isPublicService(data) && String(data.vehicle_id) === vehicleId && (serviceId === null || String(data.id) === serviceId)
+      ? { kind: 'success', record: data, deadline } : unexpected
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length !== 1 || !Object.hasOwn(data, 'detail')) return unexpected
+  if (response.status === 422) {
+    const errors = parseServiceErrors(data.detail, operation)
+    return errors ? { kind: 'invalid', errors, message: 'Check the highlighted fields.' } : unexpected
+  }
+  const missing = serviceId === null ? 'Vehicle not found.' : 'Service record not found.'
+  if (response.status === 404 && data.detail === missing) return { kind: 'not-found', message: missing }
+  if (response.status === 409 && ((operation === 'update' && data.detail === 'Service record is linked to maintenance completion and cannot be changed.') ||
+      (operation === 'remove' && data.detail === 'Service record has linked data and cannot be removed.'))) {
+    return { kind: 'conflict', message: operation === 'update'
+      ? 'Service record is linked to maintenance completion and cannot be changed.' : 'Service record has linked data and cannot be removed.' }
+  }
+  if (response.status === 401 && data.detail === 'Not authenticated.') return { kind: 'guest' }
+  if (response.status === 403 && data.detail === 'Request not allowed.') return { kind: 'forbidden', message: 'The request was not accepted. Refresh the page and try again.' }
+  if (response.status === 503 && data.detail === 'Authentication unavailable. Please try again.') return { kind: 'authentication-unavailable', message: "We couldn't confirm your session. Please try again." }
+  if (response.status === 503 && data.detail === 'Service history unavailable. Please try again.') return {
+    kind: 'unavailable', uncertain: unexpected.uncertain, message: unexpected.uncertain ? unexpected.message : 'Service history unavailable. Please try again.',
+  }
+  return unexpected
+}
+
+async function serviceRequest(operation, vehicleId, serviceId, details, signal) {
+  if (!isVehicleId(vehicleId) || (serviceId !== null && !isServiceId(serviceId))) return {
+    kind: 'invalid', errors: !isVehicleId(vehicleId) ? { vehicle_id: vehicleIdMessage } : { service_id: serviceIdMessage }, message: 'Check the record address.',
+  }
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) cancel()
+  const timer = setTimeout(cancel, 10000)
+  const method = { list: 'GET', detail: 'GET', create: 'POST', update: 'PATCH', remove: 'DELETE' }[operation]
+  const mutation = method !== 'GET'
+  let dispatched = false
+  try {
+    if (controller.signal.aborted) return { kind: 'cancelled' }
+    dispatched = true
+    const response = await fetch(`/api/vehicles/${vehicleId}/services${serviceId === null ? '' : `/${serviceId}`}`, {
+      method, credentials: 'same-origin', signal: controller.signal,
+      headers: mutation ? { Accept: 'application/json', 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1' } : { Accept: 'application/json' },
+      ...(mutation ? { body: JSON.stringify(details) } : {}),
+    })
+    const data = await response.json()
+    controller.signal.throwIfAborted()
+    return serviceResult(operation, response, data, vehicleId, serviceId)
+  } catch {
+    if (mutation && dispatched) return serviceUnexpected(operation)
+    return signal?.aborted ? { kind: 'cancelled' } : { kind: 'network', message: 'Service history could not be loaded. Check your connection and try again.' }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+  }
+}
+
+export const listServices = (vehicleId, signal) => serviceRequest('list', vehicleId, null, undefined, signal)
+export const getService = (vehicleId, serviceId, signal) => serviceRequest('detail', vehicleId, serviceId, undefined, signal)
+export function createService(vehicleId, values, signal) {
+  const prepared = prepareServiceInput(values)
+  return prepared.invalid ? Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check the highlighted fields.' })
+    : serviceRequest('create', vehicleId, null, prepared.details, signal)
+}
+export function updateService(vehicleId, serviceId, current, values, signal) {
+  if (!isPublicService(current) || String(current.id) !== serviceId || String(current.vehicle_id) !== vehicleId) return Promise.resolve({ kind: 'reload-required', message: 'Reload this record before saving.' })
+  const prepared = prepareServiceInput(values, current)
+  if (prepared.invalid) return Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check the highlighted fields.' })
+  if (prepared.unchanged) return Promise.resolve({ kind: 'unchanged', message: 'No changes to save.' })
+  return serviceRequest('update', vehicleId, serviceId, prepared.details, signal)
+}
+export function removeService(vehicleId, serviceId, confirmed, signal) {
+  if (confirmed !== true) return Promise.resolve({ kind: 'invalid', errors: { confirm_removal: 'Confirm removal with true.' }, message: 'Confirm removal first.' })
+  return serviceRequest('remove', vehicleId, serviceId, { confirm_removal: true }, signal)
 }

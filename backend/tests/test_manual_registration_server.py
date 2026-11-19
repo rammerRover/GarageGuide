@@ -2,9 +2,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from app import database, security, session_queries, user_queries, vehicle_queries
+from app import database, security, service_queries, session_queries, user_queries, vehicle_queries
 from app.config import AuthSettings, Settings, get_settings, TEST_DATABASE
 from app.schemas import LoginRequest
+from app.service_schemas import ServiceCreate, ServicePatch, ServiceRemovalRequest
 from app.vehicle_schemas import VehicleCreate, VehiclePatch
 from database_support import TestDatabaseSafetyError
 import manual_registration_server as manual
@@ -237,4 +238,136 @@ def test_manual_profile_guard_rejects_untracked_vehicle_before_query_and_still_c
         with manual.prepared_test_backend():
             getattr(vehicle_queries, operation)(settings, actor=actor, vehicle_id=8, **options)
     original.assert_not_called()
+    native.cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("operation", ["list_services", "create_service", "get_service", "update_service", "remove_service"])
+def test_manual_service_wrappers_reject_unreserved_owners_before_queries(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    original = Mock()
+    monkeypatch.setattr(service_queries, operation, original)
+    native.track_user.side_effect = TestDatabaseSafetyError("Unreserved owner")
+    actor = Mock(user=Mock(id=7, email="unreserved@example.com"))
+    options = service_options(operation)
+    with manual.prepared_test_backend():
+        with pytest.raises(TestDatabaseSafetyError):
+            getattr(service_queries, operation)(settings, actor=actor, vehicle_id=8, **options)
+    original.assert_not_called()
+    native.cleanup.assert_called_once()
+    assert getattr(service_queries, operation) is original
+
+
+def service_options(operation):
+    if operation == "create_service":
+        return {"service": ServiceCreate(service_date="2020-01-01", service_type="repair", description="Synthetic service")}
+    if operation == "list_services":
+        return {}
+    return {"service_id": 9, **({"patch": ServicePatch(notes="Edited")} if operation == "update_service" else
+        {"confirmation": ServiceRemovalRequest(confirm_removal=True)} if operation == "remove_service" else {})}
+
+
+@pytest.mark.parametrize("operation", ["list_services", "create_service", "get_service", "update_service", "remove_service"])
+def test_manual_services_guard_reserve_before_write_and_forward_preparation(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    events = []
+    native.track_user.side_effect = lambda *args: events.append("owner")
+    native.require_reserved_vehicle.side_effect = lambda *args: (events.append("parent"), True)[1]
+    native.require_reserved_service.side_effect = lambda *args: events.append("service")
+    native.reserve_service.side_effect = lambda *args: events.append("reserve")
+    native.track_service.side_effect = lambda *args: events.append("track")
+    callback = Mock()
+    returned = Mock(id=9)
+    original = Mock(side_effect=lambda *args, **kwargs: (events.append("query"), returned)[1])
+    monkeypatch.setattr(service_queries, operation, original)
+    options = service_options(operation)
+    with manual.prepared_test_backend():
+        assert getattr(service_queries, operation)(settings, actor=actor, vehicle_id=8, prepare_response=callback, **options) is returned
+    assert events == (["owner", "parent", "reserve", "query", "track"] if operation == "create_service" else
+        ["owner", "parent", "query"] if operation == "list_services" else ["owner", "service", "query"])
+    assert original.call_args.kwargs == {"actor": actor, "vehicle_id": 8, "prepare_response": callback, **options}
+    if operation == "create_service":
+        native.track_service.assert_called_once_with(9, 8, 7, options["service"])
+    else:
+        native.reserve_service.assert_not_called()
+    native.cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize("operation", ["list_services", "create_service"])
+def test_manual_service_missing_or_foreign_parent_remains_safe_not_found(guarded_setup, monkeypatch, operation):
+    settings, native, _, _ = guarded_setup
+    native.require_reserved_vehicle.return_value = False
+    original = Mock()
+    monkeypatch.setattr(service_queries, operation, original)
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    with manual.prepared_test_backend():
+        with pytest.raises(vehicle_queries.VehicleNotFoundError):
+            getattr(service_queries, operation)(settings, actor=actor, vehicle_id=8, **service_options(operation))
+    original.assert_not_called()
+    native.reserve_service.assert_not_called()
+    native.cleanup.assert_called_once()
+
+
+def test_manual_lost_service_ack_keeps_reservation_and_cleans(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    monkeypatch.setattr(service_queries, "create_service", Mock(side_effect=service_queries.ServiceUnavailableError()))
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    with pytest.raises(service_queries.ServiceUnavailableError):
+        with manual.prepared_test_backend():
+            service_queries.create_service(settings, actor=actor, vehicle_id=8, **service_options("create_service"))
+    native.reserve_service.assert_called_once()
+    native.track_service.assert_not_called()
+    native.cleanup.assert_called_once()
+
+
+def test_manual_link_setup_is_opt_in_and_cleans_if_setup_fails(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    actor = Mock(user=Mock(id=7, email="reserved-2@example.com"))
+    request = VehicleCreate(year=2020, make="Synthetic", model="Test", vehicle_type="Test")
+    original = Mock(return_value=Mock(id=8))
+    monkeypatch.setattr(vehicle_queries, "create_vehicle", original)
+    seed = Mock(side_effect=RuntimeError("Synthetic setup failure"))
+    monkeypatch.setattr(manual, "prepare_browser_service_links", seed)
+    with pytest.raises(RuntimeError):
+        with manual.prepared_test_backend(service_links=True):
+            vehicle_queries.create_vehicle(settings, actor=actor, vehicle=request)
+    seed.assert_called_once_with(native, settings, actor, 8)
+    native.track_vehicle.assert_called_once()
+    native.cleanup.assert_called_once()
+
+
+def test_manual_link_fixture_setup_reserves_before_exact_owner_scoped_inserts(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    events = []
+    native.reserve_part_snapshot.side_effect = lambda *args: (events.append("reserve-part"), "synthetic-part")[1]
+    native.reserve_maintenance_schedule.side_effect = lambda *args: (events.append("reserve-schedule"), "synthetic-schedule")[1]
+    native.reserve_maintenance_completion.side_effect = lambda *args: events.append("reserve-completion")
+    connection = Mock()
+    connection.execute.side_effect = lambda sql, params: (events.append("insert"), Mock(fetchone=Mock(return_value=(11,))))[1]
+    from unittest.mock import MagicMock
+    context = MagicMock()
+    context.__enter__.return_value = connection
+    native.connect.return_value = context
+    monkeypatch.setattr(service_queries, "create_service", Mock(side_effect=[Mock(id=9), Mock(id=10)]))
+    manual.prepare_browser_service_links(native, settings, actor, 8)
+    assert events == ["reserve-part", "insert", "reserve-schedule", "insert", "reserve-completion", "insert"]
+    for call in connection.execute.call_args_list:
+        sql, params = call.args
+        assert "user_id = %s" in sql and params[-2:] == (8, 7)
+    native.reserve_part_snapshot.assert_called_once_with(9, 8, 7)
+    native.reserve_maintenance_completion.assert_called_once_with(11, 10, 8, 7)
+
+
+@pytest.mark.parametrize("enabled,email,expected", [(False, "reserved-2@example.com", False), (True, "reserved-0@example.com", False), (True, "reserved-1@example.com", False), (True, "reserved-2@example.com", True)])
+def test_manual_links_only_seed_for_explicit_third_account(guarded_setup, monkeypatch, enabled, email, expected):
+    settings, native, _, _ = guarded_setup
+    seed = Mock()
+    monkeypatch.setattr(manual, "prepare_browser_service_links", seed)
+    monkeypatch.setattr(vehicle_queries, "create_vehicle", Mock(return_value=Mock(id=8)))
+    actor = Mock(user=Mock(id=7, email=email))
+    request = VehicleCreate(year=2020, make="Synthetic", model="Test", vehicle_type="Test")
+    with manual.prepared_test_backend(service_links=enabled):
+        vehicle_queries.create_vehicle(settings, actor=actor, vehicle=request)
+    assert seed.call_count == int(expected)
     native.cleanup.assert_called_once()

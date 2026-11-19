@@ -64,7 +64,7 @@ footer { color: #4b5a67; font-size: 0.9rem; }
 .registration fieldset { display: grid; gap: 1.5rem; min-width: 0; border: 0; padding: 0; margin: 0; }
 .form-field { display: grid; gap: 0.4rem; min-width: 0; }
 .form-field label { font-weight: 650; }
-.form-field input {
+.form-field input, .form-field select, .form-field textarea {
   width: 100%;
   min-width: 0;
   min-height: 2.75rem;
@@ -75,8 +75,13 @@ footer { color: #4b5a67; font-size: 0.9rem; }
   color: #1d2935;
   font: inherit;
 }
-.form-field input[aria-invalid="true"] { border: 2px solid #a12323; }
-.form-field input:disabled { background: #f5f7f8; }
+.form-field input[aria-invalid="true"], .form-field select[aria-invalid="true"], .form-field textarea[aria-invalid="true"] { border: 2px solid #a12323; }
+.form-field input:disabled, .form-field select:disabled, .form-field textarea:disabled { background: #f5f7f8; }
+.form-field textarea { resize: vertical; }
+.service-form h2, .service-section-title { margin-block: 1.5rem; }
+.service-list h3 { margin-block: 0 1rem; }
+.service-values dd { white-space: pre-wrap; }
+.service-form { margin-block: 1.5rem; }
 .field-hint { color: #40536a; font-size: 0.9rem; margin: 0; }
 .field-error { color: #a12323; margin: 0; }
 .vehicle-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem; }
