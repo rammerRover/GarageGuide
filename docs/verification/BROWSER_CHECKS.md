@@ -27,6 +27,26 @@ SERVICE_HISTORY_STATUS.md and add no browser observations. The procedure below i
 repeatability and is not additional execution evidence. Historical Feature 1-4
 records remain unchanged.
 
+### Feature 5 F-03 focused repair: user-performed observations
+
+The user confirmed completing all four focused Unicode repair steps in BOTH
+Vite development and production preview after the inward-scanning trim change:
+
+1. Long interior whitespace and U+FEFF were preserved in a synthetic record.
+2. The affected record and an ordinary record appeared in history and opened
+   correctly.
+3. A cost-only edit sent only the changed cost in PATCH; description and notes
+   were omitted.
+4. Exact guarded cleanup was confirmed with the message recorded above.
+
+This is focused user-browser evidence for the repair based on
+`113b36db8be3a2bcc05a432559d383af069df0af`, not agent/reviewer execution, a full
+checklist rerun, native-test execution, or a new simulated-failure run. No new
+browser version or test date was supplied. Automated evidence remains separate.
+F-01 stays closed; F-02/F-03 await fresh independent review. The original audit
+receipt and findings remain unchanged. See SERVICE_HISTORY_STATUS.md for the
+attributed report and cleanup text.
+
 ### Feature 5 guarded setup
 
 Stop ordinary backend servers on port 8000. Use only the existing initialized

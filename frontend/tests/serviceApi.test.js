@@ -152,6 +152,27 @@ for (const value of [0, undefined, '-1', '+1', '1e2', 'NaN', 'Infinity', '1,000'
 for (const value of [0, '-0', '1.001', '10000000000.00', '1e2']) test(`invalid USD ${JSON.stringify(value)}`, () => {
   assert.equal(prepareServiceInput({ ...input, cost: value }).invalid, true)
 })
+test('mixed history preserves a long interior whitespace run followed by visible text', async (t) => {
+  const gap = ' '.repeat(32768) + '\t\n'
+  const description = `\ufeffBefore${gap}After\ufeff`
+  const notes = `First note${gap}Last note`
+  const formatted = { ...record, id: 9, description, notes }
+  const prepared = prepareServiceInput({
+    ...input,
+    description: `\u0085${description}\u001c`,
+    notes: `\u001f${notes}\u2003`,
+  })
+  assert.equal(prepared.invalid, false)
+  assert.equal(prepared.details.description, description)
+  assert.equal(prepared.details.notes, notes)
+
+  mockFetch(t, async () => respond('list', { vehicle_id: record.vehicle_id, services: [formatted, record] }))
+  const { store } = await loaded('history', { listServices })
+  t.after(() => store.dispose())
+  assert.equal(store.getSnapshot().loaded, true)
+  assert.deepEqual(store.getSnapshot().records, [formatted, record])
+  assert.deepEqual(prepareServiceInput({ ...serviceDraft(formatted), cost: '10.00' }, formatted).details, { cost: '10.00' })
+})
 test('validation responses use only approved locations, messages and types; no raw data', async (t) => {
   for (const extra of [false, true]) {
     mockFetch(t, async () => respond('create', { detail: [{ loc: ['body', 'service_date'], msg: serviceMessages.service_date, type: 'value_error', ...(extra ? { input: 'PRIVATE' } : {}) }] }, 422))

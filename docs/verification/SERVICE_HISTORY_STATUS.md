@@ -755,3 +755,28 @@ No browser version, test date, or additional case-by-case observations were
 supplied for this focused run. The agent did not rerun browser checks or connect
 to PostgreSQL to record this report. Both findings remain open pending a fresh
 independent review of the approved repair checkpoint.
+
+### User-performed F-03 focused Unicode repair recheck
+
+After the inward-scanning trim repair based on
+`113b36db8be3a2bcc05a432559d383af069df0af`, the user confirmed all four focused
+browser steps in BOTH Vite development and production preview. The report
+confirmed that long interior whitespace and U+FEFF remained preserved, the
+affected record and an ordinary record appeared and opened correctly, and a
+cost-only edit sent only the changed cost in PATCH, omitting description and
+notes. The fourth step, exact guarded cleanup, was also confirmed:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.
+```
+
+These are user-performed focused observations, separate from the earlier full
+November 18 checklist, automated regressions, native PostgreSQL evidence, and
+simulated failure cases. No new browser version or test date was supplied.
+The agent did not rerun browser checks, tests, or PostgreSQL connections to
+record this report. No full checklist or failure simulation rerun is claimed.
+
+Focused browser acceptance for the F-03 repair is confirmed. F-01 remains closed;
+F-02 and F-03 remain pending fresh independent verification of an approved repair
+checkpoint. The prior audit receipt and findings are preserved unchanged; this
+browser report does not close either finding or satisfy the independent gate.

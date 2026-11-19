@@ -9,7 +9,16 @@ const text = (value) => typeof value === 'string' && value.isWellFormed() && !va
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 // Python str.strip() includes NEL and U+001C–U+001F and preserves U+FEFF.
 // eslint-disable-next-line no-control-regex -- Python treats these four controls as whitespace.
-const trimServiceText = (value) => value.replace(/^[\p{White_Space}\u001c-\u001f]+|[\p{White_Space}\u001c-\u001f]+$/gu, '')
+const serviceWhitespace = /[\p{White_Space}\u001c-\u001f]/u
+
+function trimServiceText(value) {
+  let start = 0
+  let end = value.length
+  while (start < end && serviceWhitespace.test(value[start])) start++
+  while (end > start && serviceWhitespace.test(value[end - 1])) end--
+  return value.slice(start, end)
+}
+
 const isCanonicalText = (value) => text(value) && value.length > 0 && trimServiceText(value) === value
 export const serviceMessages = {
   service_date: 'Enter a valid service date on or before today using YYYY-MM-DD.',
