@@ -1,0 +1,57 @@
+from types import SimpleNamespace
+
+import pytest
+
+from app import service_part_queries
+from database_support import TestDatabaseSafetyError
+from test_service_part_queries_integration import attach, catalog_request, listing, parent_state
+from test_service_record_queries_integration import owned
+from test_vehicle_queries_integration import actors
+import manual_registration_server as manual
+
+
+pytestmark = pytest.mark.integration
+
+
+def controller(native):
+    return SimpleNamespace(state=SimpleNamespace(browser_catalog={"native": native, "settings": native.settings, "preview": None}))
+
+
+def test_guarded_terminal_catalog_lifecycle_preserves_snapshots_and_stale_preview_conflicts(native_database, actors, owned):
+    vehicle, record = owned
+    actor = actors[0]
+    application = controller(native_database)
+    original = manual.browser_catalog_command(application, "create")
+    before = parent_state(native_database, actor, vehicle, record)
+    request = catalog_request(native_database, actor, vehicle, record, original)
+    saved = attach(native_database, actor, vehicle, record, request)
+    assert native_database.require_reserved_parts(record.id, vehicle.id, actor.user.id)
+    changed = manual.browser_catalog_command(application, "change")
+    assert changed.id == original.id and changed.name != original.name
+    with pytest.raises(service_part_queries.CatalogPreviewConflictError):
+        attach(native_database, actor, vehicle, record, request)
+    assert listing(native_database, actor, vehicle, record).parts == [saved]
+    replaced = manual.browser_catalog_command(application, "replace")
+    assert replaced.id != changed.id and replaced.part_number == changed.part_number
+    assert listing(native_database, actor, vehicle, record).parts == [saved.model_copy(update={"part_id": None})]
+    new_request = catalog_request(native_database, actor, vehicle, record, replaced)
+    second = attach(native_database, actor, vehicle, record, new_request)
+    manual.browser_catalog_command(application, "delete")
+    assert listing(native_database, actor, vehicle, record).parts == [saved.model_copy(update={"part_id": None}), second.model_copy(update={"part_id": None})]
+    assert parent_state(native_database, actor, vehicle, record) == before
+
+
+def test_guarded_catalog_delete_refuses_untracked_reference_without_changing_data(native_database, actors, owned):
+    vehicle, record = owned
+    actor = actors[0]
+    application = controller(native_database)
+    preview = manual.browser_catalog_command(application, "create")
+    saved = attach(native_database, actor, vehicle, record, catalog_request(native_database, actor, vehicle, record, preview))
+    reservation = native_database._parts.pop(saved.id)
+    try:
+        with pytest.raises(TestDatabaseSafetyError, match="untracked snapshot"):
+            manual.browser_catalog_command(application, "delete")
+    finally:
+        native_database._parts[saved.id] = reservation
+    assert listing(native_database, actor, vehicle, record).parts == [saved]
+    assert native_database.require_reserved_catalog_pair(preview.manufacturer, preview.part_number)

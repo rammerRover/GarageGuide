@@ -5,6 +5,8 @@ import { createServiceRecordStore, serviceReloadWarning, serviceRemovalWarning }
 import { prepareServiceInput, serviceFields } from './serviceValidation.js'
 import ServiceFields from './ServiceFields.jsx'
 import ServiceValues from './ServiceValues.jsx'
+import ServiceParts from './ServiceParts.jsx'
+import { createServicePartsStore } from './servicePartState.js'
 
 export default function ServiceRecordPage() {
   const { vehicleId, serviceId } = useParams()
@@ -12,15 +14,24 @@ export default function ServiceRecordPage() {
   const [resource, setResource] = useState(null)
   useEffect(() => {
     const store = createServiceRecordStore(sessionStore)
-    setResource({ store, vehicleId, serviceId })
-    return () => store.dispose()
+    const partsStore = createServicePartsStore(sessionStore)
+    setResource({ store, partsStore, vehicleId, serviceId })
+    return () => { store.dispose(); partsStore.dispose() }
   }, [sessionStore, vehicleId, serviceId])
   if (!resource || resource.vehicleId !== vehicleId || resource.serviceId !== serviceId) return <p role="status">Loading service record. Please wait.</p>
-  return <ServiceRecordView store={resource.store} vehicleId={vehicleId} serviceId={serviceId} />
+  return <ServiceRecordView store={resource.store} partsStore={resource.partsStore} vehicleId={vehicleId} serviceId={serviceId} />
 }
 
-function ServiceRecordView({ store, vehicleId, serviceId }) {
+function ServiceRecordView({ store, partsStore, vehicleId, serviceId }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  const parts = useSyncExternalStore(partsStore.subscribe, partsStore.getSnapshot)
+  const partsBlock = (value) => Boolean(value.pending || value.confirmation || value.reloadPrompt || value.refreshRequired || value.uncertainOperation)
+  const blockedByParts = partsBlock(parts)
+  const serviceAction = (action) => { if (!partsBlock(partsStore.getSnapshot())) return action() }
+  const canUseParts = () => {
+    const value = store.getSnapshot()
+    return Boolean(value.record && !value.pending && !value.editing && !value.confirmation && !value.reloadPrompt && !value.uncertainOperation)
+  }
   const navigate = useNavigate()
   const heading = useRef(null), feedback = useRef(null), inputs = useRef({}), focused = useRef(0)
   const removalHeading = useRef(null), reloadHeading = useRef(null), editButton = useRef(null), removalButton = useRef(null)
@@ -57,12 +68,12 @@ function ServiceRecordView({ store, vehicleId, serviceId }) {
         <ServiceValues record={state.record} />
         <p>Created at {state.record.created_at}</p>
         <p>These are historical readings. Editing them does not update the vehicle’s current readings.</p>
-        {!state.editing && <button type="button" ref={editButton} disabled={state.pending || uncertain || state.confirmation}
-          onClick={() => { if (store.beginEdit()) requestAnimationFrame(() => inputs.current.service_date?.focus()) }}>Edit service record</button>}
+        {!state.editing && <button type="button" ref={editButton} disabled={blockedByParts || state.pending || uncertain || state.confirmation}
+          onClick={() => serviceAction(() => { if (store.beginEdit()) requestAnimationFrame(() => inputs.current.service_date?.focus()) })}>Edit service record</button>}
       </div>
       {state.editing && <form className="registration service-form" aria-label="Edit service record" noValidate aria-busy={state.pending}
-        onSubmit={(event) => { event.preventDefault(); void store.submit() }}>
-        <fieldset disabled={state.pending || state.confirmation}>
+        onSubmit={(event) => { event.preventDefault(); serviceAction(() => { void store.submit() }) }}>
+        <fieldset disabled={blockedByParts || state.pending || state.confirmation}>
           <legend>Service details</legend>
           <ServiceFields prefix="edit-service" state={state} store={store} inputs={inputs} />
           <div className="profile-actions">
@@ -72,28 +83,31 @@ function ServiceRecordView({ store, vehicleId, serviceId }) {
         </fieldset>
       </form>}
       <div className="profile-actions">
-        <button type="button" ref={removalButton} disabled={state.pending || uncertain || state.confirmation}
-          onClick={() => store.requestRemoval()}>Remove service record</button>
+        <button type="button" ref={removalButton} disabled={blockedByParts || state.pending || uncertain || state.confirmation}
+          onClick={() => serviceAction(() => store.requestRemoval())}>Remove service record</button>
       </div>
+      {blockedByParts && <p>Finish the Parts used action or reload and inspect its uncertain result before changing this service.</p>}
+      <ServiceParts store={partsStore} vehicleId={vehicleId} serviceId={serviceId} disabled={!canUseParts()} canAct={canUseParts} />
     </>}
     {state.confirmation && <section className="session-panel" aria-labelledby="service-removal-title">
       <h2 id="service-removal-title" ref={removalHeading} tabIndex={-1}>Confirm permanent removal.</h2>
       <p>{serviceRemovalWarning}</p>
       <div className="profile-actions">
-        <button type="button" disabled={state.pending} onClick={() => { void store.confirmRemoval() }}>Permanently remove record</button>
+        <button type="button" disabled={blockedByParts || state.pending} onClick={() => serviceAction(() => { void store.confirmRemoval() })}>Permanently remove record</button>
         <button type="button" disabled={state.pending} onClick={() => { store.cancelRemoval(); removalButton.current?.focus() }}>Cancel removal</button>
       </div>
     </section>}
     {!state.pending && !['invalid', 'not-found', 'gated', 'removed'].includes(state.status) && <div className="profile-actions">
-      <button type="button" onClick={() => { if (store.requestReload()) requestAnimationFrame(() => reloadHeading.current?.focus()) }}>
+      <button type="button" disabled={blockedByParts} onClick={() => serviceAction(() => { if (store.requestReload()) requestAnimationFrame(() => reloadHeading.current?.focus()) })}>
         {state.record || uncertain ? 'Reload and inspect record' : 'Try again'}</button>
     </div>}
     {state.reloadPrompt && <section className="session-panel" aria-labelledby="service-record-reload-title">
       <h2 id="service-record-reload-title" ref={reloadHeading} tabIndex={-1}>Reload and review.</h2>
       <p>{serviceReloadWarning}</p>
+      <p>Reloading the service also discards temporary part entry and the reviewed catalog preview.</p>
       {state.uncertainOperation === 'remove' && <p>A later not-found response shows only that the record is currently absent, not which request removed it.</p>}
       <div className="profile-actions">
-        <button type="button" disabled={state.pending} onClick={() => { void store.reload() }}>Discard draft and reload</button>
+        <button type="button" disabled={blockedByParts || state.pending} onClick={() => serviceAction(() => { void store.reload() })}>Discard draft and reload</button>
         <button type="button" disabled={state.pending} onClick={() => { store.cancelReload(); feedback.current?.focus() }}>Keep current draft</button>
       </div>
     </section>}

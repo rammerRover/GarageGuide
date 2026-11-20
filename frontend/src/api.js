@@ -1,4 +1,9 @@
 import { parseSessionDeadline } from './sessionDeadline.js'
+import {
+  catalogConflictMessage, catalogMissingMessage, exactPartShape, isCatalogPreview, isPartList,
+  isPartRemoval, isServicePartId, matchesPartInput, parsePartErrors, partMessages,
+  preparePartInput, preparePartLookup, snapshotIdMessage,
+} from './servicePartValidation.js'
 import { isPublicService, isServiceId, parseServiceErrors, prepareServiceInput, serviceIdMessage } from './serviceValidation.js'
 import {
   isPublicVehicle, isVehicleId, parseReadingConfirmation, parseVehicleErrors,
@@ -472,4 +477,93 @@ export function updateService(vehicleId, serviceId, current, values, signal) {
 export function removeService(vehicleId, serviceId, confirmed, signal) {
   if (confirmed !== true) return Promise.resolve({ kind: 'invalid', errors: { confirm_removal: 'Confirm removal with true.' }, message: 'Confirm removal first.' })
   return serviceRequest('remove', vehicleId, serviceId, { confirm_removal: true }, signal)
+}
+
+export const uncertainPartMessages = {
+  add: 'The part may have been added. Reload and inspect the saved name, part number, manufacturer, quantity, and notes. An absent entry does not prove failure; the original request may still finish. Resubmitting can create a duplicate.',
+  remove: 'Removal may have completed. Reload and inspect the parts before trying again. A later not-found response shows only current absence, not which request removed it.',
+}
+const partFailure = (operation) => ({ kind: Object.hasOwn(uncertainPartMessages, operation) ? 'uncertain' : 'unexpected',
+  uncertain: Object.hasOwn(uncertainPartMessages, operation),
+  message: uncertainPartMessages[operation] ?? 'Service parts could not be loaded. Please try again.' })
+
+function partResult(operation, response, data, vehicleId, serviceId, snapshotId, details) {
+  const failure = partFailure(operation)
+  if (response.status === (operation === 'add' ? 201 : 200)) {
+    const deadline = parseSessionDeadline(response.headers.get('X-GarageGuide-Session-Expires-At'))
+    if (operation === 'list' && isPartList(data, vehicleId, serviceId)) return { kind: 'success', parts: data.parts, deadline }
+    if (operation === 'lookup' && isCatalogPreview(data) && data.manufacturer === details.manufacturer && data.part_number === details.part_number) return { kind: 'success', preview: data, deadline }
+    if (operation === 'add' && matchesPartInput(data, details) && String(data.service_record_id) === serviceId) return { kind: 'success', part: data, deadline }
+    if (operation === 'remove' && isPartRemoval(data, serviceId, snapshotId)) return { kind: 'success', removed: data, deadline }
+    return failure
+  }
+  if (!exactPartShape(data, ['detail'])) return failure
+  if (response.status === 422) {
+    const errors = parsePartErrors(data.detail)
+    return errors ? { kind: 'invalid', errors, message: 'Check the highlighted fields.' } : failure
+  }
+  if (response.status === 404) {
+    if (['Vehicle not found.', 'Service record not found.'].includes(data.detail)) return { kind: 'not-found', message: data.detail }
+    if (operation === 'lookup' && data.detail === catalogMissingMessage) return { kind: 'catalog-missing', message: catalogMissingMessage }
+    if (operation === 'remove' && data.detail === 'Part snapshot not found.') return { kind: 'snapshot-missing', message: 'This snapshot is currently absent. Reload and inspect the saved parts.' }
+  }
+  if (response.status === 409 && operation === 'add' && details.source === 'catalog' && data.detail === catalogConflictMessage) return { kind: 'stale-preview', message: catalogConflictMessage }
+  if (response.status === 401 && data.detail === 'Not authenticated.') return { kind: 'guest' }
+  if (response.status === 403 && data.detail === 'Request not allowed.') return { kind: 'forbidden', message: 'The request was not accepted. Refresh the page and try again.' }
+  if (response.status === 503 && data.detail === 'Authentication unavailable. Please try again.') return { kind: 'authentication-unavailable', message: "We couldn't confirm your session. Please try again." }
+  if (response.status === 503 && data.detail === 'Service parts unavailable. Please try again.') return { kind: 'unavailable', uncertain: failure.uncertain,
+    message: failure.uncertain ? failure.message : 'Service parts unavailable. Please try again.' }
+  return failure
+}
+
+async function partRequest(operation, vehicleId, serviceId, snapshotId, details, signal) {
+  if (!isVehicleId(vehicleId) || !isServiceId(serviceId) || (operation === 'remove' && !isServicePartId(snapshotId))) return {
+    kind: 'invalid', errors: !isVehicleId(vehicleId) ? { vehicle_id: vehicleIdMessage } :
+      !isServiceId(serviceId) ? { service_id: serviceIdMessage } : { snapshot_id: snapshotIdMessage }, message: 'Check the record address.',
+  }
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  if (signal?.aborted) cancel()
+  const timer = setTimeout(cancel, 10000)
+  const method = { list: 'GET', lookup: 'POST', add: 'POST', remove: 'DELETE' }[operation]
+  const write = operation === 'add' || operation === 'remove'
+  let dispatched = false
+  try {
+    if (controller.signal.aborted) return { kind: 'cancelled' }
+    dispatched = true
+    const response = await fetch(`/api/vehicles/${vehicleId}/services/${serviceId}/parts${operation === 'lookup' ? '/lookup' : operation === 'remove' ? `/${snapshotId}` : ''}`, {
+      method, credentials: 'same-origin', signal: controller.signal,
+      headers: method === 'GET' ? { Accept: 'application/json' } :
+        { Accept: 'application/json', 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1' },
+      ...(method !== 'GET' ? { body: JSON.stringify(details) } : {}),
+    })
+    const data = await response.json()
+    controller.signal.throwIfAborted()
+    return partResult(operation, response, data, vehicleId, serviceId, snapshotId, details)
+  } catch (error) {
+    if (write && dispatched) return partFailure(operation)
+    if (signal?.aborted) return { kind: 'cancelled' }
+    return error instanceof TypeError || error?.name === 'AbortError'
+      ? { kind: 'network', message: 'Service parts could not be loaded. Check your connection and try again.' } : partFailure(operation)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+  }
+}
+
+export const listServiceParts = (vehicleId, serviceId, signal) => partRequest('list', vehicleId, serviceId, undefined, undefined, signal)
+export function lookupServicePart(vehicleId, serviceId, values, signal) {
+  const prepared = preparePartLookup(values)
+  return prepared.invalid ? Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check the highlighted fields.' })
+    : partRequest('lookup', vehicleId, serviceId, undefined, prepared.details, signal)
+}
+export function addServicePart(vehicleId, serviceId, values, signal) {
+  const prepared = preparePartInput(values)
+  return prepared.invalid ? Promise.resolve({ kind: 'invalid', errors: prepared.errors, message: 'Check the highlighted fields.' })
+    : partRequest('add', vehicleId, serviceId, undefined, prepared.details, signal)
+}
+export function removeServicePart(vehicleId, serviceId, snapshotId, confirmed, signal) {
+  if (confirmed !== true) return Promise.resolve({ kind: 'invalid', errors: { confirm_removal: partMessages.confirm_removal }, message: 'Confirm removal first.' })
+  return partRequest('remove', vehicleId, serviceId, snapshotId, { confirm_removal: true }, signal)
 }

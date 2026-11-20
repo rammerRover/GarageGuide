@@ -1,10 +1,12 @@
 import argparse
+import json
 import os
 import sys
 from contextlib import ExitStack, contextmanager
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
+from threading import Thread
 
 
 if __name__ == "__main__":
@@ -13,7 +15,8 @@ if __name__ == "__main__":
 import pytest
 import uvicorn
 
-from app import database, service_queries, session_queries, user_queries, vehicle_queries
+from app import database, service_part_queries, service_queries, session_queries, user_queries, vehicle_queries
+from app.service_part_schemas import CatalogPartPreview
 from app.service_schemas import ServiceCreate
 from app.config import get_auth_settings, get_settings, load_auth_settings, load_settings
 from app.main import create_app
@@ -21,7 +24,7 @@ from database_support import NativeTestDatabase, TestDatabaseSafetyError
 
 
 @contextmanager
-def prepared_test_backend(*, service_links=False):
+def prepared_test_backend(*, service_links=False, service_parts=False):
     if os.environ.get("RUN_DB_TESTS") != "1":
         raise TestDatabaseSafetyError("Manual verification requires RUN_DB_TESTS=1")
     settings = load_settings(testing=True)
@@ -41,9 +44,15 @@ def prepared_test_backend(*, service_links=False):
     original_get_service = service_queries.get_service
     original_update_service = service_queries.update_service
     original_remove_service = service_queries.remove_service
+    original_parts = {name: getattr(service_part_queries, name) for name in (
+        "list_service_parts", "lookup_catalog_part", "attach_service_part", "remove_service_part")}
     native = NativeTestDatabase(settings, original_connect)
     try:
         native.check_schema()
+        if service_parts:
+            with native.connect(settings, read_only=True) as connection:
+                if connection.execute("SELECT EXISTS (SELECT 1 FROM public.parts)").fetchone() != (False,):
+                    raise TestDatabaseSafetyError("Empty-catalog browser mode requires an empty test catalog; existing rows were not changed")
         emails = [native.reserve_email() for _ in range(3)]
 
         def create_reserved_user(settings, *, email, password_hash):
@@ -132,6 +141,37 @@ def prepared_test_backend(*, service_links=False):
             service_identity(actor, vehicle_id, service_id)
             return original_remove_service(settings, actor=actor, vehicle_id=vehicle_id, service_id=service_id, confirmation=confirmation, prepare_response=prepare_response)
 
+        def part_parent(actor, vehicle_id, service_id):
+            native.track_user(actor.user.id, actor.user.email)
+            return native.require_reserved_parts(service_id, vehicle_id, actor.user.id)
+
+        def list_reserved_parts(settings, *, actor, vehicle_id, service_id, prepare_response=None):
+            part_parent(actor, vehicle_id, service_id)
+            return original_parts["list_service_parts"](settings, actor=actor, vehicle_id=vehicle_id,
+                service_id=service_id, prepare_response=prepare_response)
+
+        def lookup_reserved_part(settings, *, actor, vehicle_id, service_id, lookup, prepare_response=None):
+            if part_parent(actor, vehicle_id, service_id):
+                native.require_reserved_catalog_pair(lookup.manufacturer, lookup.part_number)
+            return original_parts["lookup_catalog_part"](settings, actor=actor, vehicle_id=vehicle_id,
+                service_id=service_id, lookup=lookup, prepare_response=prepare_response)
+
+        def attach_reserved_part(settings, *, actor, vehicle_id, service_id, part, prepare_response=None):
+            if part_parent(actor, vehicle_id, service_id):
+                if part.source == "catalog":
+                    native.require_reserved_catalog_pair(part.preview.manufacturer, part.preview.part_number)
+                native.reserve_part_snapshot(service_id, vehicle_id, actor.user.id,
+                    name=part.preview.name if part.source == "catalog" else part.name)
+            result = original_parts["attach_service_part"](settings, actor=actor, vehicle_id=vehicle_id,
+                service_id=service_id, part=part, prepare_response=prepare_response)
+            native.track_part_snapshot(result.id, service_id, vehicle_id, actor.user.id, result.name)
+            return result
+
+        def remove_reserved_part(settings, *, actor, vehicle_id, service_id, snapshot_id, confirmation, prepare_response=None):
+            part_parent(actor, vehicle_id, service_id)
+            return original_parts["remove_service_part"](settings, actor=actor, vehicle_id=vehicle_id,
+                service_id=service_id, snapshot_id=snapshot_id, confirmation=confirmation, prepare_response=prepare_response)
+
         with ExitStack() as patches:
             for owner, name, replacement in (
                 (database, "connect_database", native.connect),
@@ -149,13 +189,21 @@ def prepared_test_backend(*, service_links=False):
                 (service_queries, "get_service", get_reserved_service),
                 (service_queries, "update_service", update_reserved_service),
                 (service_queries, "remove_service", remove_reserved_service),
+                (service_part_queries, "list_service_parts", list_reserved_parts),
+                (service_part_queries, "lookup_catalog_part", lookup_reserved_part),
+                (service_part_queries, "attach_service_part", attach_reserved_part),
+                (service_part_queries, "remove_service_part", remove_reserved_part),
             ):
                 patches.enter_context(patch.object(owner, name, replacement))
             application = create_app()
             application.dependency_overrides[get_settings] = lambda: settings
             application.dependency_overrides[get_auth_settings] = lambda: auth_settings
+            if service_parts:
+                application.state.browser_catalog = {"native": native, "settings": settings, "preview": None}
             yield application, emails
     finally:
+        if getattr(native, "browser_server_running", False) is True:
+            raise TestDatabaseSafetyError("Guarded browser server is still active; stop it before exact fixture cleanup")
         native.cleanup()
 
 
@@ -197,14 +245,111 @@ def prepare_browser_service_links(native, settings, actor, vehicle_id):
                 ).fetchone()
 
 
+def browser_catalog_command(application, command):
+    """Test-terminal control only: no product endpoint or ordinary catalog edits."""
+    context = application.state.browser_catalog
+    native, settings, preview = context["native"], context["settings"], context["preview"]
+    if command == "show":
+        return preview
+    if command not in ("create", "change", "delete", "replace"):
+        raise TestDatabaseSafetyError("Unknown synthetic catalog command")
+    if command == "create":
+        if preview is not None:
+            raise TestDatabaseSafetyError("A synthetic catalog entry is already active")
+        fields = native.reserve_catalog_part()
+        with native.connect(settings) as connection:
+            row = connection.execute(
+                "INSERT INTO public.parts (manufacturer, part_number, name, category) VALUES (%s, %s, %s, %s) "
+                "RETURNING id, manufacturer, part_number, name, category",
+                tuple(fields[key] for key in ("manufacturer", "part_number", "name", "category")),
+            ).fetchone()
+    else:
+        if preview is None or preview.id not in native._catalog_parts:
+            raise TestDatabaseSafetyError("No exact fixture-owned catalog entry is active")
+        with native.connect(settings) as connection:
+            row = connection.execute("SELECT id FROM public.parts WHERE id = %s FOR UPDATE", (preview.id,)).fetchone()
+            if row != (preview.id,):
+                raise TestDatabaseSafetyError("Synthetic catalog identity is absent; no ordinary row was changed")
+            if command == "change":
+                row = connection.execute(
+                    "UPDATE public.parts SET name = %s WHERE id = %s "
+                    "RETURNING id, manufacturer, part_number, name, category",
+                    (preview.name + " revised", preview.id),
+                ).fetchone()
+            else:
+                references = connection.execute(
+                    "SELECT p.id, p.service_record_id, s.vehicle_id, v.user_id, p.name "
+                    "FROM public.service_parts AS p JOIN public.service_records AS s ON s.id = p.service_record_id "
+                    "JOIN public.vehicles AS v ON v.id = s.vehicle_id WHERE p.part_id = %s",
+                    (preview.id,),
+                ).fetchall()
+                for snapshot_id, service_id, vehicle_id, user_id, name in references:
+                    if native._parts.get(snapshot_id) != (service_id, vehicle_id, user_id, name):
+                        raise TestDatabaseSafetyError("Catalog has an untracked snapshot reference; no deletion permitted")
+                other_links = connection.execute(
+                    "SELECT EXISTS (SELECT 1 FROM public.saved_parts WHERE part_id = %s) "
+                    "OR EXISTS (SELECT 1 FROM public.part_fitments WHERE part_id = %s)",
+                    (preview.id, preview.id),
+                ).fetchone()
+                if other_links != (False,):
+                    raise TestDatabaseSafetyError("Catalog has unrelated references; no deletion permitted")
+                connection.execute("DELETE FROM public.parts WHERE id = %s", (preview.id,))
+                row = None
+                if command == "replace":
+                    row = connection.execute(
+                        "INSERT INTO public.parts (manufacturer, part_number, name, category) VALUES (%s, %s, %s, %s) "
+                        "RETURNING id, manufacturer, part_number, name, category",
+                        (preview.manufacturer, preview.part_number, preview.name, preview.category),
+                    ).fetchone()
+    result = CatalogPartPreview(**dict(zip(service_part_queries.CATALOG_FIELDS, row, strict=True))) if row is not None else None
+    if result is not None:
+        native.track_catalog_part(result.id, result.manufacturer, result.part_number)
+    context["preview"] = result
+    return result
+
+
+def run_browser_parts_terminal(application):
+    native = application.state.browser_catalog["native"]
+    server = uvicorn.Server(uvicorn.Config(application, host="127.0.0.1", port=8000, access_log=False))
+    thread = Thread(target=server.run, daemon=True)
+    native.browser_server_running = True
+    try:
+        thread.start()
+    except BaseException:
+        native.browser_server_running = False
+        raise
+    print("Empty catalog verified. Complete manual-entry checks in dev and preview before catalog create.")
+    print("Terminal commands: catalog create | catalog show | catalog change | catalog replace | catalog delete | quit")
+    try:
+        while thread.is_alive():
+            try:
+                command = input("fixture> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if command == "quit":
+                break
+            if command.startswith("catalog "):
+                preview = browser_catalog_command(application, command.removeprefix("catalog "))
+                print(json.dumps(preview.model_dump(mode="json") if preview else None, ensure_ascii=True))
+            else:
+                print("Use an exact fixture command or quit; no command was executed.")
+    finally:
+        server.should_exit = True
+        thread.join(timeout=15)
+        if thread.is_alive():
+            raise TestDatabaseSafetyError("Guarded server has not stopped; cleanup was not attempted concurrently")
+        native.browser_server_running = False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Run the guarded, synthetic-account-only authentication test backend."
     )
     parser.add_argument("--service-links", action="store_true", help="Seed exact linked service fixtures for new vehicles of the third reserved account")
+    parser.add_argument("--service-parts", action="store_true", help="Require an empty test catalog and enable guarded synthetic catalog terminal controls")
     args = parser.parse_args(argv)
     try:
-        with prepared_test_backend(service_links=args.service_links) as (application, emails):
+        with prepared_test_backend(service_links=args.service_links, service_parts=args.service_parts) as (application, emails):
             print("Guarded manual backend: garageguide_app_test only.")
             print("Use only these reserved synthetic email addresses:")
             for email in emails:
@@ -213,7 +358,10 @@ def main(argv=None):
                 print("Only the third reserved account's new vehicles receive linked service fixtures; the first two start with empty history.")
             print("Stop with Ctrl+C and wait for the verified-cleanup message.")
             try:
-                uvicorn.run(application, host="127.0.0.1", port=8000, access_log=False)
+                if args.service_parts:
+                    run_browser_parts_terminal(application)
+                else:
+                    uvicorn.run(application, host="127.0.0.1", port=8000, access_log=False)
             except KeyboardInterrupt:
                 pass
     except (Exception, pytest.fail.Exception):
@@ -223,7 +371,8 @@ def main(argv=None):
             file=sys.stderr,
         )
         return 1
-    print("Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.")
+    print("Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, schedules, and catalog entries are absent." if args.service_parts else
+          "Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.")
     return 0
 
 

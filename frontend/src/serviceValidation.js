@@ -11,7 +11,7 @@ const object = (value) => value && typeof value === 'object' && !Array.isArray(v
 // eslint-disable-next-line no-control-regex -- Python treats these four controls as whitespace.
 const serviceWhitespace = /[\p{White_Space}\u001c-\u001f]/u
 
-function trimServiceText(value) {
+export function trimServiceText(value) {
   let start = 0
   let end = value.length
   while (start < end && serviceWhitespace.test(value[start])) start++

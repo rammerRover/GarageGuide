@@ -32,6 +32,8 @@ class NativeTestDatabase:
         self._schedule_reservations = set()
         self._completion_reservations = set()
         self._parts = {}
+        self._catalog_reservations = set()
+        self._catalog_parts = {}
         self._schedules = {}
         self._completions = {}
         self.cleanup_verified = False
@@ -39,6 +41,8 @@ class NativeTestDatabase:
         self.cleanup_vehicle_count = 0
         self.cleanup_service_count = 0
         self.cleanup_link_counts = (0, 0, 0)
+        self.cleanup_catalog_count = 0
+        self.browser_server_running = False
 
     def connect(self, settings, *, read_only=False):
         if settings.database != TEST_DATABASE:
@@ -83,6 +87,7 @@ class NativeTestDatabase:
                     "operating_hours, cost, notes, created_at FROM public.service_records WHERE FALSE"
                 )
                 self._check_linked_schema(connection)
+                self._check_catalog_schema(connection)
         except psycopg.Error:
             pytest.fail("Prepared users/session/vehicle/service schema could not be verified; schema was not changed", pytrace=False)
 
@@ -132,6 +137,26 @@ class NativeTestDatabase:
         self._emails.add(email)
         self.cleanup_verified = False
         return email
+
+    def _check_catalog_schema(self, connection):
+        connection.execute("SELECT id, manufacturer, part_number, name, category FROM public.parts WHERE FALSE")
+        connection.execute(
+            "SELECT id, service_record_id, part_id, name, part_number, manufacturer, quantity, notes "
+            "FROM public.service_parts WHERE FALSE"
+        )
+        unique = connection.execute(
+            "SELECT pg_get_constraintdef(oid) FROM pg_catalog.pg_constraint "
+            "WHERE conrelid = to_regclass(%s) AND contype = 'u'", ("public.parts",),
+        ).fetchall()
+        references = connection.execute(
+            "SELECT pg_get_constraintdef(oid), condeferrable FROM pg_catalog.pg_constraint "
+            "WHERE conrelid = to_regclass(%s) AND contype = 'f'", ("public.service_parts",),
+        ).fetchall()
+        if (
+            ("UNIQUE (manufacturer, part_number)",) not in unique
+            or ("FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE SET NULL", False) not in references
+        ):
+            pytest.fail("Prepared catalog/snapshot constraints are required; schema was not changed", pytrace=False)
 
     def track_user(self, user_id, email):
         if email not in self._emails:
@@ -329,9 +354,15 @@ class NativeTestDatabase:
         ):
             raise TestDatabaseSafetyError("Linked record requires an exact tracked synthetic service and owner")
 
-    def reserve_part_snapshot(self, service_id, vehicle_id, user_id):
+    def reserve_part_snapshot(self, service_id, vehicle_id, user_id, *, name=None):
         self._require_service_fixture(service_id, vehicle_id, user_id)
-        name = f"gg-service-part-{uuid4().hex}"
+        if name is None:
+            name = f"gg-service-part-{uuid4().hex}"
+        if not isinstance(name, str) or not name:
+            raise TestDatabaseSafetyError("Synthetic snapshot requires an exact reserved name")
+        reservation = (service_id, vehicle_id, user_id, name)
+        if reservation in self._part_reservations:
+            return name
         with self.connect(self.settings, read_only=True) as connection:
             existing = connection.execute(
                 "SELECT p.id FROM public.service_parts AS p "
@@ -345,6 +376,114 @@ class NativeTestDatabase:
         self._part_reservations.add((service_id, vehicle_id, user_id, name))
         self.cleanup_verified = False
         return name
+
+    def track_part_snapshot(self, snapshot_id, service_id, vehicle_id, user_id, name):
+        self._require_service_fixture(service_id, vehicle_id, user_id)
+        reservation = (service_id, vehicle_id, user_id, name)
+        if reservation not in self._part_reservations:
+            raise TestDatabaseSafetyError("Snapshot must be reserved before writing")
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT p.id FROM public.service_parts AS p "
+                "JOIN public.service_records AS s ON s.id = p.service_record_id "
+                "JOIN public.vehicles AS v ON v.id = s.vehicle_id "
+                "WHERE p.id = %s AND s.id = %s AND s.vehicle_id = %s AND v.user_id = %s AND p.name = %s",
+                (snapshot_id, *reservation),
+            ).fetchone()
+        if row != (snapshot_id,):
+            raise TestDatabaseSafetyError("Synthetic snapshot ownership could not be verified")
+        self._parts[snapshot_id] = reservation
+        self.cleanup_verified = False
+
+    def require_reserved_parts(self, service_id, vehicle_id, user_id):
+        if not self.require_reserved_service(service_id, vehicle_id, user_id):
+            return False
+        with self.connect(self.settings, read_only=True) as connection:
+            rows = connection.execute(
+                "SELECT p.id, p.name FROM public.service_parts AS p "
+                "JOIN public.service_records AS s ON s.id = p.service_record_id "
+                "JOIN public.vehicles AS v ON v.id = s.vehicle_id "
+                "WHERE s.id = %s AND s.vehicle_id = %s AND v.user_id = %s",
+                (service_id, vehicle_id, user_id),
+            ).fetchall()
+        for snapshot_id, name in rows:
+            reservation = (service_id, vehicle_id, user_id, name)
+            if self._parts.get(snapshot_id) != reservation and reservation not in self._part_reservations:
+                raise TestDatabaseSafetyError("Only reserved synthetic part snapshots may be accessed")
+            self._parts[snapshot_id] = reservation
+        return True
+
+    def require_reserved_catalog_pair(self, manufacturer, part_number):
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT id FROM public.parts WHERE manufacturer = %s AND part_number = %s",
+                (manufacturer, part_number),
+            ).fetchone()
+        if row is not None and row[0] not in self._catalog_parts:
+            raise TestDatabaseSafetyError("Only reserved synthetic catalog rows may be used")
+        return row is not None
+
+    def reserve_catalog_part(self):
+        tag = uuid4().hex
+        fields = {"manufacturer": f"gg-catalog-maker-{tag}", "part_number": f"gg-catalog-number-{tag}",
+                  "name": f"gg-catalog-part-{tag}", "category": "Synthetic fixture"}
+        pair = (fields["manufacturer"], fields["part_number"])
+        with self.connect(self.settings, read_only=True) as connection:
+            existing = connection.execute(
+                "SELECT id FROM public.parts WHERE manufacturer = %s AND part_number = %s", pair,
+            ).fetchone()
+        if existing is not None:
+            raise TestDatabaseSafetyError("Synthetic catalog collision; existing row was not claimed")
+        self._catalog_reservations.add(pair)
+        self.cleanup_verified = False
+        return fields
+
+    def track_catalog_part(self, part_id, manufacturer, part_number):
+        pair = (manufacturer, part_number)
+        if pair not in self._catalog_reservations:
+            raise TestDatabaseSafetyError("Catalog row must be reserved before writing")
+        with self.connect(self.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT id FROM public.parts WHERE id = %s AND manufacturer = %s AND part_number = %s",
+                (part_id, *pair),
+            ).fetchone()
+        if row != (part_id,):
+            raise TestDatabaseSafetyError("Synthetic catalog identity could not be verified")
+        self._catalog_parts[part_id] = pair
+        self.cleanup_verified = False
+
+    def _delete_catalog_fixtures(self, connection):
+        if not self._catalog_reservations and not self._catalog_parts:
+            return
+        for pair in self._catalog_reservations:
+            rows = connection.execute(
+                "SELECT id FROM public.parts WHERE manufacturer = %s AND part_number = %s", pair,
+            ).fetchall()
+            for (part_id,) in rows:
+                self._catalog_parts.setdefault(part_id, pair)
+        for part_id in self._catalog_parts:
+            row = connection.execute("SELECT id FROM public.parts WHERE id = %s FOR UPDATE", (part_id,)).fetchone()
+            if row is None:
+                continue
+            linked = connection.execute(
+                "SELECT EXISTS (SELECT 1 FROM public.service_parts WHERE part_id = %s) "
+                "OR EXISTS (SELECT 1 FROM public.saved_parts WHERE part_id = %s) "
+                "OR EXISTS (SELECT 1 FROM public.part_fitments WHERE part_id = %s)",
+                (part_id, part_id, part_id),
+            ).fetchone()
+            if linked != (False,):
+                raise TestDatabaseSafetyError("Synthetic catalog row has unexpected references; no SET NULL permitted")
+            connection.execute("DELETE FROM public.parts WHERE id = %s", (part_id,))
+
+    def _remaining_catalog_fixtures(self, connection):
+        if not self._catalog_reservations and not self._catalog_parts:
+            return []
+        rows = connection.execute("SELECT id FROM public.parts WHERE id = ANY(%s)", (list(self._catalog_parts),)).fetchall()
+        for pair in self._catalog_reservations:
+            rows.extend(connection.execute(
+                "SELECT id FROM public.parts WHERE manufacturer = %s AND part_number = %s", pair,
+            ).fetchall())
+        return rows
 
     def reserve_maintenance_schedule(self, vehicle_id, user_id):
         if user_id not in self._users or self._vehicles.get(vehicle_id) != user_id:
@@ -494,6 +633,7 @@ class NativeTestDatabase:
                 for session_id, token_hash in sessions:
                     self._sessions[session_id] = (row[0], token_hash)
         self._delete_linked_fixtures(connection)
+        self._delete_catalog_fixtures(connection)
         self._recover_and_delete_services(connection)
         self._recover_and_delete_vehicles(connection)
         for session_id, (user_id, token_hash) in self._sessions.items():
@@ -507,7 +647,7 @@ class NativeTestDatabase:
             )
 
     def cleanup(self):
-        if not self._emails:
+        if not self._emails and not self._catalog_reservations and not self._catalog_parts:
             return
         try:
             with self.connect(self.settings, read_only=False) as connection:
@@ -529,7 +669,8 @@ class NativeTestDatabase:
                     ).fetchall()
                 services = self._remaining_services(connection)
                 links = self._remaining_linked_fixtures(connection)
-                if remaining or sessions or vehicles or services or links:
+                catalog = self._remaining_catalog_fixtures(connection)
+                if remaining or sessions or vehicles or services or links or catalog:
                     pytest.fail("Synthetic cleanup verification failed; stop native testing", pytrace=False)
         except psycopg.Error:
             pytest.fail("Synthetic cleanup failed; stop native testing and resolve tracked fixtures", pytrace=False)
@@ -537,6 +678,7 @@ class NativeTestDatabase:
         self.cleanup_vehicle_count = len(self._vehicles)
         self.cleanup_service_count = len(self._services)
         self.cleanup_link_counts = (len(self._parts), len(self._completions), len(self._schedules))
+        self.cleanup_catalog_count = len(self._catalog_parts)
         self.cleanup_verified = True
         self._emails.clear()
         self._users.clear()
@@ -549,5 +691,7 @@ class NativeTestDatabase:
         self._schedule_reservations.clear()
         self._completion_reservations.clear()
         self._parts.clear()
+        self._catalog_reservations.clear()
+        self._catalog_parts.clear()
         self._schedules.clear()
         self._completions.clear()

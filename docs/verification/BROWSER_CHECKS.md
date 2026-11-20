@@ -1,5 +1,263 @@
 # Manual browser verification
 
+## Feature 6 Step 4: user-performed browser verification complete
+
+The user reported that all performed Feature 6 manual checks passed and then
+explicitly confirmed completing the entire checklist in BOTH Vite development
+and production preview, including the full visible idle-deadline check.
+Test date: November 20, 2026. Browser version: 157.0.8103.79; the browser product
+name was not separately supplied. No agent or independent-reviewer browser run
+is claimed.
+
+The reported checklist covers empty-catalog manual entry, exact lookup/miss,
+preview review/save/invalidation, stale changed/replaced/deleted previews,
+explicit manual fallback, preserved historical snapshot details, quantities,
+confirmed individual removal/cancellation/correction, service removal blocking,
+two-account isolation, protected navigation, session deadlines, local expiry,
+keyboard/focus/announcements, responsive widths and zoom. This is the user's
+whole-checklist pass report, not additional per-case observations inferred by
+the agent. No unreported numeric idle duration or assistive-technology run is
+claimed.
+
+Real browser/backend checks and the guide's simulated network, timeout, error,
+stale-response and lost-acknowledgment cases remain separate. Passing simulations
+does not prove a real PostgreSQL outage, server revocation or lost commit.
+Automated/native results are recorded separately in SERVICE_PARTS_STATUS.md
+and are reused unchanged; none were rerun to record these observations.
+
+The user supplied the exact guarded backend cleanup message:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, schedules, and catalog entries are absent.
+```
+
+Both required modes, full visible idle check and cleanup are confirmed. Step 4
+is complete and awaiting final review/checkpoint approval. The procedure below
+is retained for repeatability and is not another execution record. Prior
+Feature 1-5 observations remain unchanged.
+
+### Guarded setup and two modes
+
+Use only the prepared `garageguide_app_test` database and the existing
+`backend/.env.test`. Stop other backends on port 8000. From the repository root:
+
+```powershell
+$env:RUN_DB_TESTS = '1'
+backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py --service-parts
+```
+
+This test-only launcher checks settings and the physical database before any
+business SQL, verifies the existing schema without changing it, reserves three
+unique synthetic account emails, and guards parents/catalog/snapshot writes.
+It requires the test catalog to be empty initially. If it refuses a nonempty
+catalog or another guard fails, STOP; do not clear rows or change databases.
+There is no product catalog-management endpoint. Terminal catalog commands below
+can change only their own reserved synthetic rows and check linked references.
+
+Register only the printed reserved emails. Choose your own matching 15-128
+character passwords; no password is printed or supplied by this launcher.
+Do not paste passwords, cookie values, tokens, request bodies, or sensitive
+screenshots into verification reports. Use two independent Chrome profiles
+(or normal and Incognito) for accounts A and B. Dev/preview share the cookie
+host, so ports alone do not isolate accounts. Create a vehicle and dated service
+for each through the UI. Record the synthetic vehicle/service IDs for navigation.
+
+In a second terminal, set the existing Node path and start development:
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run dev
+```
+
+Open `http://127.0.0.1:5173`. For preview, build then run:
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run build
+npm --prefix frontend run preview
+```
+
+Open `http://127.0.0.1:4173`. Keep the guarded backend running for both modes.
+Complete the empty-catalog checks in BOTH modes BEFORE `catalog create`.
+Then complete all remaining applicable checks in both modes. These are manual
+launch commands; the agent has not started servers or executed browser checks.
+
+### Real browser and backend checks
+
+1. Open the existing protected service detail page
+   `/vehicles/VEHICLE_ID/services/SERVICE_ID`. The saved service loads before
+   Parts used. An owned empty service shows an empty parts list and manual entry
+   works even though the catalog is empty. Check direct load, refresh, Back and
+   Forward, case/encoded/trailing-slash route variants and invalid/unrelated
+   paths. Private parts, drafts and previews must remain hidden while session
+   validation is unresolved and after logout, rejection or account changes.
+2. **Before creating any catalog row**, add a manual snapshot in each mode:
+   name required; manufacturer, part number and notes optional; quantity begins
+   at 1. Blank optional values show Not recorded; literal `0` remains a recorded
+   string. Test blank name, zero/fraction/overflow quantity, valid quantity 1
+   and 2147483647, Unicode/U+FEFF and interior whitespace. Correct errors and
+   submit. Expect one POST 201 then one list GET; saved values match. Rapid
+   repeat submission must not create duplicate POSTs. A subsequent invalid draft
+   must submit once corrected after the required list refresh has succeeded.
+3. Choose Exact catalog lookup and enter an invented unmatched pair. Expect the
+   fixed catalog 404 and an explicit Switch to manual entry option. Do not
+   silently create a manual snapshot. After choosing manual, adding still works.
+4. At the backend `fixture>` prompt, type `catalog create`. It prints only a
+   synthetic reviewed preview. Copy its exact manufacturer and part number into
+   the browser lookup fields. Test a changed-case pair does not match; then use
+   the exact pair. Expect POST `.../parts/lookup` 200 and a visible preview with
+   name, manufacturer, part number and category. No `/catalog-match` is used.
+   Lookup is not a vehicle-compatibility claim. Changing either lookup field
+   must invalidate the preview and disable Add until a new lookup succeeds.
+5. Review and add the catalog-backed snapshot. Expect one POST 201 plus GET.
+   Quantity and notes are user input; identity comes from the server's catalog
+   row. Category is review-only and is not stored in the snapshot. Finish/cancel
+   a service edit before parts actions, and finish parts actions before service
+   mutations. Ensure both sets of controls explain these temporary exclusions.
+6. Look up again but do not add. Type `catalog change` at the fixture prompt,
+   then Add using the old preview. Expect the fixed stale-preview 409, no new
+   snapshot, preview invalidation, and deliberate fresh lookup or manual switch.
+   There must be no automatic re-lookup/save. Reload saved parts and confirm the
+   earlier saved snapshot still has its original copied name and other text.
+7. Obtain a fresh preview. Type `catalog replace` before Add. The same pair now
+   has a new catalog ID. Old-preview Add must conflict without writing. Look up
+   again, review the new preview and add successfully. Type `catalog delete`,
+   then reload parts: both saved copies retain their text/quantity/notes and
+   lose only the catalog reference. The UI must not claim they were originally
+   manual. A lookup miss again offers an explicit manual switch. Use
+   `catalog create` to prepare another synthetic example if needed for preview.
+8. Request removal of one snapshot. The inline panel names it and explains
+   removal affects only that snapshot. Cancel sends no DELETE, returns focus
+   and leaves it saved. Confirm sends exactly one DELETE with literal
+   `confirm_removal: true`, then GET. Other snapshots and the service remain.
+   If a catalog entry still exists, looking it up still succeeds. Correct a
+   snapshot by deliberately removing and re-adding it; no edit endpoint exists.
+9. Try removing the service while parts remain: the existing Feature 5 linked
+   record conflict leaves service and parts intact. After removing all parts,
+   normal service removal is possible unless another existing link blocks it.
+   Do not add maintenance/parts-catalog product pages or modify ordinary data.
+10. With account B, navigate to A's exact synthetic vehicle/service URLs and
+    attempt the nested part list, lookup, add and removal using the UI/fetch
+    policy below. Missing and foreign parents have the same safe fixed 404;
+    no catalog preview or A's snapshot values are disclosed. B's owned service
+    still works. A still sees its own saved data. Use only fixture-owned IDs.
+11. Check Network: no-store on successes and errors; the committed
+    X-GarageGuide-Session-Expires-At header only on successful 200/201 responses.
+    A valid newer response updates the visible local deadline with no extra
+    `/api/auth/session` call solely for synchronization. Failed responses do not
+    extend it. No periodic polling or automatic mutation retry occurs.
+12. Wait until the visible local deadline with the page visible and no deliberate
+    activity. Private identity, snapshots, drafts and previews clear at equality
+    without an expiry-triggered request. Later deliberate navigation/visibility
+    return/retry may validate again. Record whether this full real observation
+    was performed; do not replace it with a simulated error or fake clock claim.
+13. Use only the keyboard: labeled inputs, first-error focus, associated errors,
+    preview focus, confirmation/cancel focus, reload warning, status messages
+    and repeat-submission prevention. Check narrow layouts at 375/768/1440 px
+    and 200% zoom with long part names/notes and no horizontal overflow.
+
+For a real ownership probe in DevTools, replace only the fixture-owned IDs and
+select the method/body deliberately. Do not log the result values or tokens:
+
+```javascript
+const partsPath = '/api/vehicles/VEHICLE_ID/services/SERVICE_ID/parts'
+await fetch(partsPath, { credentials: 'same-origin' })
+// A deliberate manual add probe; do not repeat it automatically:
+await fetch(partsPath, {
+  method: 'POST', credentials: 'same-origin',
+  headers: { 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1' },
+  body: JSON.stringify({ source: 'manual', name: 'Synthetic isolation probe' }),
+})
+// For lookup use partsPath + '/lookup', the same headers, and the exact pair.
+// For DELETE use partsPath + '/SNAPSHOT_ID' and { confirm_removal: true }.
+```
+
+The browser supplies Origin; do not attempt to spoof it. All probes must stay
+within the guarded setup. Browser records should report status/behavior only.
+
+### Simulated failures and stale work (separate evidence)
+
+In each mode, use this temporary fetch wrapper for **parts paths only**. It
+never prints bodies, passwords, cookies or tokens. Set one fault, operate the
+UI, then restore real fetch before the next case. Do not modify API/session
+implementation files or persist this shim. Rejecting promises and fake bodies
+are simulations; they do not prove an actual PostgreSQL outage or revocation.
+
+```javascript
+window.ggPartsFetch = window.fetch
+window.ggPartsFault = null
+window.fetch = async function (input, init) {
+  const url = new URL(typeof input === 'string' ? input : input.url, location.origin)
+  if (!/^\/api\/vehicles\/[1-9][0-9]*\/services\/[1-9][0-9]*\/parts(?:\/|$)/.test(url.pathname)) {
+    return window.ggPartsFetch.call(this, input, init)
+  }
+  const fault = window.ggPartsFault
+  if (fault === 'network') throw new TypeError('Synthetic connection failure')
+  if (fault === 'timeout') return new Promise((resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+  })
+  if (fault === 'late') {
+    const response = await window.ggPartsFetch.call(this, input, init)
+    await new Promise(resolve => setTimeout(resolve, 4000))
+    return response
+  }
+  if (fault === 'lost-write' && ['POST', 'DELETE'].includes(init?.method) && !url.pathname.endsWith('/lookup')) {
+    await window.ggPartsFetch.call(this, input, init)
+    throw new TypeError('Synthetic lost acknowledgment')
+  }
+  const cases = {
+    rejected: [401, { detail: 'Not authenticated.' }],
+    forbidden: [403, { detail: 'Request not allowed.' }],
+    unavailable: [503, { detail: 'Service parts unavailable. Please try again.' }],
+    'auth-unavailable': [503, { detail: 'Authentication unavailable. Please try again.' }],
+    unexpected: [500, { detail: 'Internal server error' }],
+    malformed: [200, { parts: 'invalid' }],
+  }
+  if (cases[fault]) {
+    const [status, body] = cases[fault]
+    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
+  }
+  return window.ggPartsFetch.call(this, input, init)
+}
+// Set one case, perform an action, then restore:
+// window.ggPartsFault = 'unavailable'
+// window.fetch = window.ggPartsFetch; delete window.ggPartsFetch; delete window.ggPartsFault
+```
+
+- On list/lookup network/timeout/503/malformed/500, show safe feedback, retain
+  correctable values while the session is valid, and require deliberate retry.
+  A 401 or authentication 503 gates private content according to session policy.
+  Restore real fetch before retrying or signing in again.
+- To test failed required refresh, temporarily return the unavailable response
+  only when `init?.method === 'GET'` while letting an Add succeed. Another Add
+  remains blocked until a deliberate real list reload succeeds. After that,
+  make a new draft invalid, correct it, and verify submission works.
+- With `lost-write`, allow one Add/Remove then restore fetch. The UI must not
+  retry. Reload and inspect identity, quantity and notes. An uncertain Add
+  requires explicit acknowledgment of duplicate risk before unlocking, and
+  acknowledgment itself sends nothing. Absence after reload does not prove
+  failure. An uncertain Remove's later absence proves only current absence;
+  if still present, another DELETE requires a new explicit confirmation.
+- With `late`, navigate to another service/vehicle, leave/return via history,
+  hide the page, or sign out/sign in (including same account). Late list,
+  lookup, Add/Remove results must not restore private state, preview or an old
+  deadline. Restore fetch and deliberately reload to inspect possible writes.
+
+### Cleanup and reporting
+
+Restore fetch shims. Stop frontend terminals. In the guarded backend terminal,
+type `quit` so it stops accepting requests before exact cleanup. Wait for:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, schedules, and catalog entries are absent.
+```
+
+This includes only reserved/tracked synthetic IDs and their guarded recovery
+reservations; it is not a global catalog/database reset. If cleanup fails, stop
+and report the failure; do not approve browser acceptance or delete broad data.
+Report exact browser/version, date, both modes, observed real cases, separately
+simulated cases, full-idle observation if performed, and the exact cleanup line.
+
 ## Feature 5 Step 7: user-performed browser verification complete
 
 The user reported manually running the Feature 5 browser checklist on November

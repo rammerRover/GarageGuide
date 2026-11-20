@@ -47,6 +47,8 @@ def native_database(request, monkeypatch):
                         f"Verified exact linked cleanup: {parts} part snapshots, {completions} "
                         f"maintenance completions, and {schedules} schedules absent from garageguide_app_test."
                     )
+                if native.cleanup_catalog_count:
+                    print(f"Verified exact catalog cleanup: {native.cleanup_catalog_count} synthetic catalog rows absent from garageguide_app_test.")
         except BaseException:
             request.session.shouldstop = "Native cleanup failed; resolve tracked fixtures before continuing"
             raise
