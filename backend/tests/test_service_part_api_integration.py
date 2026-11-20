@@ -192,6 +192,12 @@ def test_native_failure_boundary_rolls_back_or_preserves_uncertain_commit_withou
         if failure == "lost-ack":
             raise psycopg.OperationalError(PRIVATE)
     def wrapped(settings, **kwargs):
+        if operation == "add":
+            prepare_response = kwargs["prepare_response"]
+            def prepare(result):
+                native_database.remember_part_snapshot(result.id, record.id, vehicle.id, first.session.user.id, result.name)
+                prepare_response(result)
+            kwargs["prepare_response"] = prepare
         with monkeypatch.context() as patches:
             patches.setattr(database, "connect_database", faulty)
             return query(settings, **kwargs)

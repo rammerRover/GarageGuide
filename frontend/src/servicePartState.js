@@ -10,11 +10,12 @@ import {
 export const partRemovalWarning = 'Remove only this saved part snapshot? The service and catalog entry will remain. This cannot be undone.'
 export const partReloadWarning = 'Reload saved parts? Your temporary entry will be retained, but the reviewed catalog preview will be cleared.'
 const refreshWarning = 'The change committed, but saved parts could not be reloaded. Reload and inspect the list before another change.'
+const reloadWarning = 'Saved parts could not be reloaded. Reload and inspect the list before another change.'
 const empty = (vehicleId = null, serviceId = null, authenticationGeneration = null) => ({
   vehicleId, serviceId, authenticationGeneration, requestGeneration: 0, source: 'manual',
   parts: [], draft: partDraft(), lookupPair: { manufacturer: '', part_number: '' }, preview: null,
   loaded: false, pending: false, status: 'idle', errors: {}, message: '', focusVersion: 0,
-  confirmation: null, reloadPrompt: false, refreshRequired: false, lastMutation: null,
+  confirmation: null, reloadPrompt: false, refreshRequired: false, lastMutation: null, refreshMutation: null,
   uncertainOperation: null, uncertainSnapshotId: null, inspected: false,
 })
 const same = (a, b) => a === b || Boolean(a && b && a.generation === b.generation && a.location === b.location && a.user === b.user)
@@ -103,7 +104,7 @@ export function createServicePartsStore(session, api = requests, now = Date.now)
     active = null
     if (result.kind === 'success') {
       if (write(operation)) {
-        publish({ pending: false, status: 'saved', refreshRequired: true, lastMutation: operation,
+        publish({ pending: false, status: 'saved', refreshRequired: true, lastMutation: operation, refreshMutation: operation,
           ...(operation === 'add' ? { draft: partDraft(), preview: null } : { parts: state.parts.filter((part) => String(part.id) !== request.snapshotId) }),
           message: operation === 'add' ? 'Part snapshot added.' : 'Part snapshot removed.' })
         await run('load')
@@ -115,12 +116,12 @@ export function createServicePartsStore(session, api = requests, now = Date.now)
       } else {
         const uncertain = state.uncertainOperation
         const absent = uncertain === 'remove' && !result.parts.some((part) => String(part.id) === state.uncertainSnapshotId)
-        publish({ pending: false, parts: result.parts, loaded: true, status: 'ready', refreshRequired: false,
+        publish({ pending: false, parts: result.parts, loaded: true, status: 'ready', refreshRequired: false, refreshMutation: null,
           inspected: Boolean(uncertain), ...(uncertain === 'remove' ? { uncertainOperation: null, uncertainSnapshotId: null } : {}),
           message: uncertain === 'add' ? uncertainPartMessages.add : uncertain === 'remove' ? absent
             ? 'The snapshot is currently absent. This does not prove which request removed it.'
             : 'The snapshot is still present. Review it and confirm removal again if you choose.' :
-              state.lastMutation === 'add' ? 'Part snapshot added. Saved parts reloaded.' : state.lastMutation === 'remove' ? 'Part snapshot removed. Saved parts reloaded.' : '',
+              state.refreshMutation === 'add' ? 'Part snapshot added. Saved parts reloaded.' : state.refreshMutation === 'remove' ? 'Part snapshot removed. Saved parts reloaded.' : state.loaded ? 'Saved parts reloaded.' : '',
           focusVersion: state.focusVersion + 1 })
       }
     } else if (result.kind === 'not-found') {
@@ -134,7 +135,7 @@ export function createServicePartsStore(session, api = requests, now = Date.now)
       publish({ pending: false, preview: null, status: result.kind, errors: {},
         message: result.kind === 'stale-preview' ? catalogConflictMessage : result.message, focusVersion: state.focusVersion + 1 })
     } else if (result.kind === 'snapshot-missing') {
-      publish({ pending: false, confirmation: null, refreshRequired: true, status: 'refresh-required',
+      publish({ pending: false, confirmation: null, refreshRequired: true, lastMutation: null, refreshMutation: null, status: 'refresh-required',
         message: result.message, focusVersion: state.focusVersion + 1 })
     } else {
       const uncertain = write(operation) && (result.uncertain || ['uncertain', 'network', 'unexpected', 'cancelled', 'unavailable'].includes(result.kind))
@@ -142,7 +143,8 @@ export function createServicePartsStore(session, api = requests, now = Date.now)
         uncertainOperation: uncertain ? operation : state.uncertainOperation,
         uncertainSnapshotId: uncertain && operation === 'remove' ? request.snapshotId : state.uncertainSnapshotId,
         inspected: uncertain ? false : state.inspected,
-        message: uncertain ? uncertainPartMessages[operation] : state.refreshRequired ? refreshWarning : result.message ?? '',
+        message: uncertain || state.uncertainOperation ? `${uncertainPartMessages[uncertain ? operation : state.uncertainOperation]}${operation === 'load' ? ' Saved parts could not be reloaded. Try a deliberate reload again.' : ''}` :
+          state.refreshRequired ? state.refreshMutation ? refreshWarning : reloadWarning : result.message ?? '',
         focusVersion: state.focusVersion + 1 })
     }
     return result

@@ -149,12 +149,13 @@ def test_browser_catalog_guard_rejects_an_existing_untracked_catalog_id(settings
 
 
 @pytest.mark.parametrize("known", [False, True])
-def test_browser_snapshot_guard_requires_known_id_or_exact_prewrite_reservation(settings, known):
+def test_browser_snapshot_guard_requires_exact_returned_id_not_just_a_reservation(settings, known):
     connection = connection_with((TEST_DATABASE,), [(22, "synthetic")])
     native = NativeTestDatabase(settings, Mock(return_value=connection))
     native.require_reserved_service = Mock(return_value=True)
+    native._part_reservations.add((12, 8, 42, "synthetic"))
     if known:
-        native._part_reservations.add((12, 8, 42, "synthetic"))
+        native._parts[22] = (12, 8, 42, "synthetic")
         assert native.require_reserved_parts(12, 8, 42)
         assert native._parts[22] == (12, 8, 42, "synthetic")
     else:
@@ -162,3 +163,66 @@ def test_browser_snapshot_guard_requires_known_id_or_exact_prewrite_reservation(
             native.require_reserved_parts(12, 8, 42)
         assert not native._parts
     assert connection.execute.call_args_list[0].args == ("SELECT current_database()",)
+
+
+@pytest.mark.parametrize("rows", [[(22, "synthetic"), (23, "synthetic")], [(23, "synthetic")]])
+def test_browser_guard_rejects_and_does_not_adopt_an_untracked_same_name_id(settings, rows):
+    connection = connection_with((TEST_DATABASE,), rows)
+    native, _ = linked_native(settings, connection)
+    native.require_reserved_service = Mock(return_value=True)
+    native._part_reservations.add((12, 8, 42, "synthetic"))
+    native.remember_part_snapshot(22, 12, 8, 42, "synthetic")
+    with pytest.raises(TestDatabaseSafetyError, match="synthetic part"):
+        native.require_reserved_parts(12, 8, 42)
+    assert native._parts == {22: (12, 8, 42, "synthetic")}
+    assert all(call.args[0].startswith("SELECT") for call in connection.execute.call_args_list)
+
+
+@pytest.mark.parametrize("captured,rows", [([], [(22,)]), ([22], [(22,), (23,)]), ([22], [(23,)])])
+def test_cleanup_stops_without_deleting_or_adopting_unexpected_snapshot_matches(settings, captured, rows):
+    writer = connection_with((TEST_DATABASE,), (42,), [], rows)
+    native, _ = linked_native(settings, writer)
+    native._part_reservations.add((12, 8, 42, "synthetic"))
+    for part_id in captured:
+        native.remember_part_snapshot(part_id, 12, 8, 42, "synthetic")
+    expected = dict(native._parts)
+    with pytest.raises(TestDatabaseSafetyError, match="Unexpected snapshot ID"):
+        native.cleanup()
+    assert native._parts == expected and 23 not in native._parts
+    assert not any(call.args[0].startswith("DELETE") for call in writer.execute.call_args_list)
+    assert not native.cleanup_verified and native._part_reservations
+    assert writer.__exit__.call_args.args[0] is TestDatabaseSafetyError
+
+
+@pytest.mark.parametrize("ids,rows", [([22], [(22,)]), ([22, 23], [(22,), (23,)]), ([22], [])])
+def test_exact_returned_ids_support_lost_ack_duplicates_and_rolled_back_insert(settings, ids, rows):
+    writer = connection_with(rows, *([None] * len(ids)))
+    native, connect = linked_native(settings)
+    native._part_reservations.add((12, 8, 42, "synthetic"))
+    before = connect.call_count
+    for part_id in ids:
+        native.remember_part_snapshot(part_id, 12, 8, 42, "synthetic")
+    assert connect.call_count == before  # Pre-commit capture never opens a second connection.
+    native._delete_linked_fixtures(writer)
+    deletes = [call.args[1] for call in writer.execute.call_args_list if call.args[0].startswith("DELETE")]
+    assert deletes == [(part_id, 12, 8, 42, "synthetic") for part_id in ids]
+    assert set(native._parts) == set(ids)
+
+
+@pytest.mark.parametrize("snapshot_id", [None, True, "22", 0, -1, 2147483648])
+def test_precommit_snapshot_capture_rejects_invalid_returned_ids(settings, snapshot_id):
+    native, connect = linked_native(settings)
+    native._part_reservations.add((12, 8, 42, "synthetic"))
+    before = connect.call_count
+    with pytest.raises(TestDatabaseSafetyError, match="integer ID"):
+        native.remember_part_snapshot(snapshot_id, 12, 8, 42, "synthetic")
+    assert not native._parts and connect.call_count == before
+
+
+def test_precommit_snapshot_capture_cannot_reassign_an_id(settings):
+    native, _ = linked_native(settings)
+    native._part_reservations.update({(12, 8, 42, "first"), (12, 8, 42, "second")})
+    native.remember_part_snapshot(22, 12, 8, 42, "first")
+    with pytest.raises(TestDatabaseSafetyError, match="another fixture"):
+        native.remember_part_snapshot(22, 12, 8, 42, "second")
+    assert native._parts == {22: (12, 8, 42, "first")}

@@ -4,6 +4,18 @@ Feature 6: Record parts used during a service.
 
 ## Current status
 
+**F-05/F-06 repair, November 20, 2026:** Targeted code and database-free
+regressions are implemented; both P1 findings remain OPEN pending independent
+verification. F-04 remains unchanged, open P2/nonblocking. The checkpoint and
+original changes-requested audit receipt are preserved. That receipt is
+historical and stale for the changed code; no fresh passing review is claimed.
+The separately approved 12-case native repair set passed with exact cleanup;
+the user confirmed all focused browser checks in development and preview on
+November 20, 2026, using Chrome 157.0.8103.79, with exact cleanup. The repair is
+ready for checkpoint review; F-05/F-06 remain open for independent verification.
+The original implementation/browser results below describe the pre-repair
+checkpoint, not proof of the changed cleanup or feedback behavior.
+
 Step 3 was approved. Step 4's Parts used interface and guarded manual setup are
 implemented. Automated and native final verification passed as recorded below.
 The user confirmed the complete browser checklist passed in development and
@@ -232,3 +244,123 @@ final review. The repeatable procedure is retained in BROWSER_CHECKS.md.
   hashes were refreshed; only three verification/progress documents changed
   since the passing candidate. It is a proposal for review, not staging, commit,
   independent-audit or feature-completion authorization.
+
+## F-05/F-06 targeted repair evidence
+
+The approved checkpoint remains `f84e348cd8c88b181b69da0bfb7148cabb51a665`.
+The original audit receipt/findings are unchanged in the live records and copied
+byte-for-byte to ignored `blueprint/.state/staging/feature-6-f05-f06-repair/` as
+`historical-review.md` and `historical-findings.md`. No finding is marked fixed,
+closed or accepted by this repair record. The active specification is unchanged.
+
+### F-05: exact snapshot identity
+
+Previously, a parent/name reservation allowed another matching ID to be adopted
+by both the browser guard and cleanup scan. Now discovery scans never add IDs.
+They reject any unexpected same-name ID before deletion. Fixture writers capture
+their own INSERT RETURNING ID before commit/response preparation can fail.
+Browser wrappers and existing direct linked-fixture writers use that capture;
+post-commit tracking still verifies the exact ID/parent/owner. Two acknowledged
+identical inserts have two separately recorded IDs. An absent captured ID after
+rollback is harmless; an ambiguous or uncaptured match stops cleanup rather than
+guessing ownership. The database-name/first-statement guards remain unchanged.
+
+Database-free tests prove refusal without DELETE or adoption, rollback of the
+cleanup context, retained recovery metadata, exact-ID lost-ack recovery, harmless
+absent IDs, acknowledged duplicates, invalid IDs and callback ordering before
+response preparation/commit. The initial repair pass made no database connection.
+The subsequently approved native helper/refusal cases ran only against guarded
+garageguide_app_test, with results recorded below.
+
+### F-06: mutation-specific refresh feedback
+
+A separate refresh-mutation marker is set only by a validated successful write
+response and consumed by its successful list refresh. Ordinary reloads do not
+replay historical Add/Remove messages. Snapshot 404 resets that marker and uses
+neutral failed/successful reload feedback. A confirmed write whose refresh fails
+still honestly says the change committed. An uncertain write remains uncertain
+through failed inspection; no retry is sent. Initial list loading retains the
+existing empty feedback so it does not steal focus with a reload announcement.
+
+### Executed repair checks
+
+```powershell
+backend/.venv/Scripts/python.exe -m pytest -q -c backend/pyproject.toml backend/tests/test_service_part_fixture_safety.py backend/tests/test_service_link_fixture_safety.py backend/tests/test_manual_service_parts.py backend/tests/test_manual_registration_server.py -m "not integration" -p no:cacheprovider --tb=short
+node --test frontend/tests/servicePartApi.test.js frontend/tests/servicePartState.test.js
+npm --prefix frontend run lint
+npm --prefix frontend run build
+git diff --check
+```
+
+- Focused affected backend checks: **110 passed**, 2.64 seconds, one existing
+  Starlette/AnyIO deprecation warning. Real database access is forbidden by the
+  test fixtures.
+- Focused frontend API/state checks: **210 passed**, 0 failed/skipped/cancelled,
+  0.48 seconds. Existing Node MockTimers experimental warning.
+- Frontend lint: passed. Production build: passed, Vite 6.4.5, 68 modules,
+  2.16 seconds. Tracked/repair-file whitespace checks passed. No dependency,
+  schema, lockfile or configuration change was made. An earlier build displayed
+  an npm major-version update notice; no upgrade was performed.
+- No full suite or pip check was rerun for these narrow repairs. Unaffected
+  evidence stays historical. The 537 earlier native passes do not verify the
+  changed cleanup; the separately approved 12 cases below provide fresh targeted
+  cleanup evidence without rerunning the full native suite.
+
+### Approved 12-case native verification: passed
+
+The user approved exactly 12 cases covering untracked same-name
+refusal without deletion, two acknowledged identical snapshots, manual
+prepare/rollback/lost-ack and catalog lost-ack, API Add prepare/rollback/lost-ack,
+both old linked-fixture removal/insert orderings, and synthetic catalog lifecycle.
+That exact set ran: **12 passed, 0 failures, 0 skips, 51.31 seconds**, one existing
+Starlette/AnyIO deprecation warning. No case or full suite was added. RUN_DB_TESTS=1
+was required; only .env.test settings were loaded, effective and connected
+databases were garageguide_app_test, and every new physical connection performed
+its first-statement current_database() guard. Schema was not initialized/changed.
+
+All 12 cases have captured exact cleanup receipts. Separate guarded connections
+verified absence of **24 users, 24 sessions, 12 vehicles, 12 services, 14 snapshot
+IDs and 3 catalog IDs**; no completion or schedule fixture was created. These
+are tracked IDs verified absent, including rows already removed/rolled back by
+a case, not global deletion counts. The unknown-row case restored only its own
+hidden fixture ID in finally so final teardown remained exact. No guard or
+cleanup failure occurred. Expected guard rejection inside that test is a passing
+refusal assertion, not a real cleanup incident requiring broader recovery.
+
+The exact executed command (the approved 12 node IDs plus JUnit capture options),
+native.log, native.xml and native-cleanup.json are preserved under ignored
+blueprint/.state/staging/feature-6-f05-f06-repair/. The count and every node ID
+were checked against the approved proposal. Summarizing the receipts opened no
+additional database connection and did not rerun tests.
+
+### Focused user-browser verification: complete
+
+The user reported completing all focused F-05/F-06 browser checks in BOTH Vite
+development and production preview on November 20, 2026, in Chrome 157.0.8103.79.
+Ordinary reload and removal 404 recovery, confirmed Add/Remove with failed
+refresh, and uncertain Add/Remove behaved as expected. The user explicitly
+reported that reloads did not replay old success messages or send another
+mutation, and the write count stayed 1 in each scenario. These observations
+apply to the focused repair, separately from the original full checklist.
+
+Real guarded writes/reloads and simulated 404/503/lost-acknowledgment behavior
+remain distinct categories. The simulations are not proof of a real PostgreSQL
+outage or genuinely lost commit. No agent/reviewer browser run, additional
+per-case network trace, repeated full checklist or repeated full idle test is
+claimed. The 12 native results above are preserved and were not rerun to enter
+these observations; neither were the passing focused database-free, Node,
+lint or build checks because their code remains unchanged.
+
+The user supplied this exact final guarded cleanup message:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, schedules, and catalog entries are absent.
+```
+
+This user-reported browser cleanup is separate from the 12 automated native
+cleanup receipts. The repeatable focused guide remains in BROWSER_CHECKS.md.
+The final repair checkpoint proposal includes only the 14 repair/evidence files;
+the unchanged historical audit receipt and findings records are excluded.
+F-05/F-06 stay OPEN pending independent review and F-04 remains unchanged.
+No staging, commit, audit, completion, merge or push has occurred during this
+repair. Only documentation/hash/whitespace work was needed for this update.

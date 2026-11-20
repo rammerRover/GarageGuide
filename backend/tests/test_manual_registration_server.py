@@ -356,6 +356,7 @@ def test_manual_link_fixture_setup_reserves_before_exact_owner_scoped_inserts(gu
         sql, params = call.args
         assert "user_id = %s" in sql and params[-2:] == (8, 7)
     native.reserve_part_snapshot.assert_called_once_with(9, 8, 7)
+    native.remember_part_snapshot.assert_called_once_with(11, 9, 8, 7, "synthetic-part")
     native.reserve_maintenance_completion.assert_called_once_with(11, 10, 8, 7)
 
 

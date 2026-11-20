@@ -89,15 +89,17 @@ def reserve_link(native, actor, vehicle, record, kind):
     return schedule_id
 
 
-def insert_link(connection, actor, vehicle, record, kind, reservation):
+def insert_link(native, connection, actor, vehicle, record, kind, reservation):
     if kind == "part":
-        return connection.execute(
+        snapshot_id = connection.execute(
             "INSERT INTO public.service_parts (service_record_id, name, quantity, notes) "
             "SELECT s.id, %s, %s, %s FROM public.service_records AS s "
             "JOIN public.vehicles AS v ON v.id = s.vehicle_id "
             "WHERE s.id = %s AND s.vehicle_id = %s AND v.user_id = %s RETURNING id",
             (reservation, 1, "Exact synthetic snapshot", record.id, vehicle.id, actor.user.id),
         ).fetchone()[0]
+        native.remember_part_snapshot(snapshot_id, record.id, vehicle.id, actor.user.id, reservation)
+        return snapshot_id
     return connection.execute(
         "INSERT INTO public.maintenance_completions (vehicle_id, schedule_id, service_record_id) "
         "SELECT s.vehicle_id, %s, s.id FROM public.service_records AS s "
@@ -110,7 +112,7 @@ def insert_link(connection, actor, vehicle, record, kind, reservation):
 def add_link(native, actor, vehicle, record, kind):
     reservation = reserve_link(native, actor, vehicle, record, kind)
     with native.connect(native.settings) as connection:
-        return insert_link(connection, actor, vehicle, record, kind, reservation)
+        return insert_link(native, connection, actor, vehicle, record, kind, reservation)
 
 
 def wait_for_blocker(locker, worker_pid):
@@ -367,7 +369,7 @@ def test_child_insert_commits_first_and_waiting_mutation_rechecks_links(native_d
         patches.setattr(database, "connect_database", worker_connect)
         with ThreadPoolExecutor(max_workers=1) as pool:
             with native_database.connect(native_database.settings) as inserter:
-                child_id = insert_link(inserter, actor, vehicle, record, kind, reservation)
+                child_id = insert_link(native_database, inserter, actor, vehicle, record, kind, reservation)
                 future = pool.submit(remove if operation == "remove" else update, native_database, actor, vehicle, record,
                                      **({"notes": "Waiting correction"} if operation == "update" else {}))
                 assert ready.wait(timeout=2)
@@ -396,7 +398,7 @@ def test_removal_commits_first_and_blocked_child_insert_cannot_commit(native_dat
             with native_database.connect(native_database.settings) as connection:
                 worker.append(connection.info.backend_pid)
                 ready.set()
-                insert_link(connection, actor, vehicle, record, kind, reservation)
+                insert_link(native_database, connection, actor, vehicle, record, kind, reservation)
             return "unexpected-committed-child"
         except psycopg.errors.ForeignKeyViolation:
             return "foreign-key-rejected"

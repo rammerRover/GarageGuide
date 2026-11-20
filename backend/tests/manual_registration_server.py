@@ -162,8 +162,12 @@ def prepared_test_backend(*, service_links=False, service_parts=False):
                     native.require_reserved_catalog_pair(part.preview.manufacturer, part.preview.part_number)
                 native.reserve_part_snapshot(service_id, vehicle_id, actor.user.id,
                     name=part.preview.name if part.source == "catalog" else part.name)
+            def prepare(result):
+                native.remember_part_snapshot(result.id, service_id, vehicle_id, actor.user.id, result.name)
+                if prepare_response is not None:
+                    prepare_response(result)
             result = original_parts["attach_service_part"](settings, actor=actor, vehicle_id=vehicle_id,
-                service_id=service_id, part=part, prepare_response=prepare_response)
+                service_id=service_id, part=part, prepare_response=prepare)
             native.track_part_snapshot(result.id, service_id, vehicle_id, actor.user.id, result.name)
             return result
 
@@ -219,13 +223,14 @@ def prepare_browser_service_links(native, settings, actor, vehicle_id):
         if kind == "part":
             name = native.reserve_part_snapshot(record.id, vehicle_id, actor.user.id)
             with native.connect(settings) as connection:
-                connection.execute(
+                snapshot_id = connection.execute(
                     "INSERT INTO public.service_parts (service_record_id, name, quantity, notes) "
                     "SELECT s.id, %s, %s, %s FROM public.service_records AS s "
                     "JOIN public.vehicles AS v ON v.id = s.vehicle_id "
                     "WHERE s.id = %s AND s.vehicle_id = %s AND v.user_id = %s RETURNING id",
                     (name, 1, "Guarded browser fixture", record.id, vehicle_id, actor.user.id),
-                ).fetchone()
+                ).fetchone()[0]
+                native.remember_part_snapshot(snapshot_id, record.id, vehicle_id, actor.user.id, name)
         else:
             name = native.reserve_maintenance_schedule(vehicle_id, actor.user.id)
             with native.connect(settings) as connection:

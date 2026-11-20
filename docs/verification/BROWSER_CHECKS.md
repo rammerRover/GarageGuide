@@ -2,6 +2,178 @@
 
 ## Feature 6 Step 4: user-performed browser verification complete
 
+### F-05/F-06 focused repair recheck: user-performed checks complete
+
+The user confirmed completing ALL focused repair checks in BOTH Vite development
+and production preview on November 20, 2026, using Chrome 157.0.8103.79.
+Removal 404, confirmed Add/Remove with failed refresh, and uncertain Add/Remove
+behaved as expected. Reloads did not replay old success messages or send another
+mutation; the user reported the write count stayed 1 in each scenario.
+
+These are user-performed observations, not agent/reviewer browser execution.
+Real guarded Add/Remove and normal reload behavior remain separate from the
+shim's simulated 404/503 and lost-acknowledgment cases. Simulations do not prove
+a real database outage or lost commit. The separately recorded 12 native passes
+and cleanup receipts are preserved; no runtime suite was rerun for this record.
+No full Feature 6 checklist or idle-deadline check is claimed to have been
+repeated during this focused repair verification.
+
+The user supplied this exact guarded cleanup confirmation:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, schedules, and catalog entries are absent.
+```
+
+Focused browser acceptance is recorded. F-05/F-06 remain OPEN pending fresh
+independent review; F-04 is unchanged. The steps below are retained as a
+repeatable procedure, not additional execution evidence. The original full
+Feature 6 browser report follows in its own historical section.
+
+#### Guarded setup for the focused recheck
+
+Stop any other backend on port 8000. From the repository root, in terminal 1:
+
+```powershell
+$env:RUN_DB_TESTS = '1'
+backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py --service-parts
+```
+
+Use only the printed reserved synthetic emails. Register one with a password
+you choose privately, then sign in. Never paste the password, cookies or tokens
+into a report or screenshot. The launcher loads .env.test and checks the test
+database and existing schema; it must refuse an unsafe database or nonempty
+test catalog. If it refuses, stop rather than deleting ordinary data. No catalog
+entry or terminal catalog command is needed for these manual-part checks.
+
+In terminal 2, run development:
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run dev
+```
+
+Open `http://127.0.0.1:5173`, create one synthetic vehicle and dated service,
+and open that service's Parts used section. Perform all four flows below.
+Then run production preview in another terminal, using the existing passing
+production build (no rebuild needed for documentation changes):
+
+```powershell
+$env:PATH = "$env:APPDATA\fnm\node-versions\v22.23.4\installation;$env:PATH"
+npm --prefix frontend run preview
+```
+
+Open `http://127.0.0.1:4173`, sign in with the reserved account if needed, and
+repeat the four flows on an owned service. Cookies share the loopback hostname
+across ports. Keep the guarded backend running through both modes. Start each
+mode with a normal page load and previous fetch overrides removed.
+
+#### Install the temporary, parts-only simulation control
+
+After Parts used has loaded, paste this once into DevTools Console in that
+mode. It stores no authentication data and prints no request bodies/values.
+It does not touch authentication or catalog lookup requests. `writes` counts
+attempted Add/Remove requests for repeat-submission checks, not database rows.
+
+```javascript
+(() => {
+  const realFetch = window.fetch.bind(window)
+  const h = {
+    mode: 'normal', failLists: false, writes: 0,
+    restore() { window.fetch = realFetch; delete window.ggRepair },
+  }
+  window.ggRepair = h
+  const fixed = (status, detail) => new Response(JSON.stringify({ detail }), {
+    status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  })
+  window.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), location.origin)
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+    const part = url.origin === location.origin && /^\/api\/vehicles\/[1-9][0-9]*\/services\/[1-9][0-9]*\/parts(?:\/[1-9][0-9]*)?$/.test(url.pathname)
+    if (!part) return realFetch(input, init)
+    if (method === 'GET' && h.failLists) return fixed(503, 'Service parts unavailable. Please try again.')
+    if (!['POST', 'DELETE'].includes(method)) return realFetch(input, init)
+    h.writes += 1
+    if (method === 'DELETE' && h.mode === 'missing') {
+      h.failLists = true
+      return fixed(404, 'Part snapshot not found.')
+    }
+    const response = await realFetch(input, init)
+    if (response.ok && ['confirmed', 'uncertain'].includes(h.mode)) {
+      h.failLists = true
+      if (h.mode === 'uncertain') throw new TypeError('Synthetic lost acknowledgment')
+    }
+    return response
+  }
+})()
+```
+
+#### Four flows, repeated in development and preview
+
+1. **Ordinary reload:** leave `ggRepair.mode = 'normal'` and
+   `ggRepair.failLists = false`. Add two manual snapshots with identical name
+   and values; both remain separate. After each Add 201 its immediate list
+   refresh may announce that Add once. Click **Reload and inspect parts**, then
+   **Reload saved parts**. Expect only "Saved parts reloaded."; no earlier
+   Add/Remove success should repeat. Remove one with explicit confirmation;
+   the other remains. Repeat the deliberate reload and check neutral feedback.
+2. **Removal 404:** ensure a displayed snapshot remains. In Console set
+   `ggRepair.mode = 'missing'; ggRepair.failLists = false; ggRepair.writes = 0`.
+   Click its **Remove snapshot**, then **Permanently remove snapshot**. The shim
+   returns 404 without sending DELETE to the backend. Click the two reload
+   controls above; the simulated GET now returns 503. Expect "Saved parts could
+   not be reloaded...", never "The change committed", "Part snapshot added"
+   or "Part snapshot removed". Another write stays blocked. Set
+   `ggRepair.mode = 'normal'; ggRepair.failLists = false`, then deliberately
+   reload again. The row is still present; expect only "Saved parts reloaded."
+   `ggRepair.writes` must remain 1; recovery sends no mutation.
+3. **Confirmed write / failed refresh:** set
+   `ggRepair.mode = 'confirmed'; ggRepair.failLists = false; ggRepair.writes = 0`.
+   Add a uniquely named manual part. The real POST returns 201; its immediate
+   GET is simulated 503. Expect "The change committed, but saved parts could
+   not be reloaded..." and blocked further writes. Set
+   `ggRepair.mode = 'normal'; ggRepair.failLists = false` and deliberately reload.
+   This current Add success may appear once. Reload once more: neutral list
+   feedback only. `ggRepair.writes` stays 1. Repeat this flow with confirmed
+   removal of a displayed snapshot: real DELETE 200, failed GET, honest commit
+   warning, one removal-success refresh, then a neutral reload.
+4. **Uncertain write:** set
+   `ggRepair.mode = 'uncertain'; ggRepair.failLists = false; ggRepair.writes = 0`.
+   Add a uniquely named manual part. The shim forwards the real write but loses
+   its acknowledgment; the UI must say it may have been added, not that it
+   committed. The UI must not retry or auto-refresh. Deliberately reload: the
+   simulated GET fails, so feedback must remain uncertain and explain that
+   inspection failed. Set `ggRepair.mode = 'normal'; ggRepair.failLists = false`
+   and reload again. Inspect name/quantity/notes. The duplicate warning remains;
+   an absent entry would not prove failure. The explicit risk acknowledgment
+   only unlocks the form and sends nothing: `ggRepair.writes` stays 1. Do not
+   add again when the row already exists. Repeat with removal of a displayed
+   snapshot: after failed then successful inspection, feedback describes current
+   absence/presence only. It must not claim which request removed it; any retry
+   while present requires a new explicit confirmation. No automatic mutation,
+   polling or deadline-only authentication request should appear.
+
+#### Restore and report
+
+After each mode, run `ggRepair.restore()` (or reload the page) to remove the shim.
+The 404/503/lost-ack cases are simulations, distinct from real successful writes
+and reads; they do not prove a real outage or lost commit. Do not manually inject
+an untracked row to test cleanup; the approved native set covers that refusal.
+
+After both modes, close frontend test pages/servers and type `quit` in the
+guarded backend terminal. Wait for this exact line:
+
+```text
+Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, schedules, and catalog entries are absent.
+```
+
+For future reruns, if any guard or cleanup fails, stop and report it without
+broad deletion or reset. Report browser/version, test date, both modes, the four
+outcomes, separate simulation observations and the exact cleanup line. The
+current focused user-observation record and cleanup are documented above;
+this retained procedure does not imply another browser run.
+
+### Original checkpoint browser observations (historical)
+
 The user reported that all performed Feature 6 manual checks passed and then
 explicitly confirmed completing the entire checklist in BOTH Vite development
 and production preview, including the full visible idle-deadline check.

@@ -3,6 +3,12 @@ import test from 'node:test'
 import { catalogConflictMessage, catalogMissingMessage } from '../src/servicePartValidation.js'
 import { fixture, loaded, now, stamp, snapshot, preview, deferred, selectCatalog } from './servicePartFixtures.js'
 
+test('initial list load does not announce a mutation or move focus to reload feedback', async () => {
+  const f = await loaded()
+  assert.equal(f.store.getSnapshot().message, '')
+  f.store.dispose()
+})
+
 test('load, manual add, required refresh and confirmed removal keep separate saved and draft values', async () => {
   const f = await loaded()
   assert.deepEqual(f.store.getSnapshot().parts, [snapshot])
@@ -103,6 +109,79 @@ for (const operation of ['add', 'remove']) test(`${operation}: failed required r
   assert.equal(f.store.getSnapshot().refreshRequired, false)
   if (operation === 'add') assert.equal(f.calls.add.length, 1)
   else assert.equal(f.calls.remove.length, 1)
+  f.store.dispose()
+})
+
+for (const earlierAdd of [false, true]) for (const reloadFails of [false, true]) {
+  test(`snapshot 404 then reload: prior add ${earlierAdd}, reload failure ${reloadFails} cannot claim a mutation`, async () => {
+    let failRead = false
+    const f = await loaded({ removeServicePart: async () => ({ kind: 'snapshot-missing', message: 'This snapshot is currently absent. Reload and inspect the saved parts.' }),
+      listServiceParts: async () => failRead ? { kind: 'unavailable', message: 'Service parts unavailable. Please try again.' } :
+        { kind: 'success', parts: [snapshot], deadline: stamp() } })
+    if (earlierAdd) {
+      f.store.edit('name', 'Previous add')
+      assert.equal((await f.store.submit()).kind, 'success')
+      assert.match(f.store.getSnapshot().message, /Part snapshot added/)
+    }
+    f.store.requestRemoval('9')
+    assert.equal((await f.store.confirmRemoval()).kind, 'snapshot-missing')
+    assert.equal(f.store.getSnapshot().refreshMutation, null)
+    failRead = reloadFails
+    f.store.requestReload(); await f.store.reload()
+    const state = f.store.getSnapshot()
+    assert.equal(state.refreshRequired, reloadFails)
+    assert.doesNotMatch(state.message, /committed|Part snapshot added|Part snapshot removed/)
+    assert.equal(state.message, reloadFails ? 'Saved parts could not be reloaded. Reload and inspect the list before another change.' : 'Saved parts reloaded.')
+    assert.equal(f.calls.remove.length, 1)
+    if (reloadFails) {
+      assert.equal(f.store.requestRemoval('9'), false)
+      failRead = false
+      f.store.requestReload(); await f.store.reload()
+      assert.equal(f.store.getSnapshot().message, 'Saved parts reloaded.')
+    }
+    f.store.dispose()
+  })
+}
+
+for (const operation of ['add', 'remove']) test(`${operation}: only its acknowledged write refresh announces success once`, async () => {
+  let reads = 0, failRead = true
+  const f = await loaded({ listServiceParts: async () => ++reads > 1 && failRead ? { kind: 'unavailable' } :
+    { kind: 'success', parts: [snapshot], deadline: stamp() } })
+  if (operation === 'add') { f.store.edit('name', 'Acknowledged add'); await f.store.submit() }
+  else { f.store.requestRemoval('9'); await f.store.confirmRemoval() }
+  assert.equal(f.store.getSnapshot().refreshMutation, operation)
+  assert.match(f.store.getSnapshot().message, /^The change committed, but saved parts could not be reloaded\./)
+  f.store.requestReload(); await f.store.reload()
+  assert.match(f.store.getSnapshot().message, /^The change committed,/)
+  failRead = false
+  f.store.requestReload(); await f.store.reload()
+  assert.equal(f.store.getSnapshot().message, `Part snapshot ${operation === 'add' ? 'added' : 'removed'}. Saved parts reloaded.`)
+  assert.equal(f.store.getSnapshot().refreshMutation, null)
+  f.store.requestReload(); await f.store.reload()
+  assert.equal(f.store.getSnapshot().message, 'Saved parts reloaded.')
+  assert.equal(f.calls[operation].length, 1)
+  f.store.dispose()
+})
+
+for (const operation of ['add', 'remove']) test(`${operation}: failed inspection retains uncertainty and never claims commit`, async () => {
+  let reads = 0, failRead = true
+  const method = operation === 'add' ? 'addServicePart' : 'removeServicePart'
+  const f = await loaded({ [method]: async () => ({ kind: 'uncertain', uncertain: true }),
+    listServiceParts: async () => ++reads === 1 ? { kind: 'success', parts: [snapshot], deadline: stamp() } :
+      failRead ? { kind: 'unavailable' } : { kind: 'success', parts: [], deadline: stamp() } })
+  if (operation === 'add') { f.store.edit('name', 'Uncertain add'); await f.store.submit() }
+  else { f.store.requestRemoval('9'); await f.store.confirmRemoval() }
+  f.store.requestReload(); await f.store.reload()
+  assert.equal(f.store.getSnapshot().uncertainOperation, operation)
+  assert.match(f.store.getSnapshot().message, /may have|may still/)
+  assert.match(f.store.getSnapshot().message, /could not be reloaded/)
+  assert.doesNotMatch(f.store.getSnapshot().message, /The change committed|Part snapshot added|Part snapshot removed/)
+  assert.equal((await f.store.submit()).kind, 'cancelled')
+  failRead = false
+  f.store.requestReload(); await f.store.reload()
+  assert.equal(f.store.getSnapshot().uncertainOperation, operation === 'add' ? 'add' : null)
+  assert.match(f.store.getSnapshot().message, operation === 'add' ? /absent entry does not prove failure/ : /currently absent.*does not prove which request removed it/)
+  assert.equal(f.calls[operation].length, 1)
   f.store.dispose()
 })
 

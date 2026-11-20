@@ -111,6 +111,7 @@ def test_missing_or_deferred_child_foreign_keys_stop_before_fixture_writes(setti
 def seed_reservations(native):
     native._service_reservations.add((8, 42, date(2020, 1, 1), "repair", "Synthetic service", None, None, None, None))
     native._part_reservations.add((12, 8, 42, "synthetic-part"))
+    native.remember_part_snapshot(20, 12, 8, 42, "synthetic-part")
     native._schedule_reservations.add((8, 42, "synthetic-schedule"))
     native._completion_reservations.add((30, 12, 8, 42))
 

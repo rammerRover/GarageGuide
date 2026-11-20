@@ -36,16 +36,49 @@ def test_browser_attachment_reserves_before_write_and_tracks_exact_result(guarde
     events = []
     native.require_reserved_parts.return_value = True
     native.reserve_part_snapshot.side_effect = lambda *a, **k: events.append("reserve")
+    native.remember_part_snapshot.side_effect = lambda *a, **k: events.append("capture")
     native.track_part_snapshot.side_effect = lambda *a, **k: events.append("track")
-    original = Mock(side_effect=lambda *a, **k: (events.append("insert"), SimpleNamespace(id=20, name="Synthetic"))[1])
+    def insert(*a, **kwargs):
+        result = SimpleNamespace(id=20, name="Synthetic")
+        events.append("insert")
+        kwargs["prepare_response"](result)
+        events.append("commit")
+        return result
+    original = Mock(side_effect=insert)
     monkeypatch.setattr(service_part_queries, "attach_service_part", original)
     actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
     with manual.prepared_test_backend():
         service_part_queries.attach_service_part(settings, actor=actor, vehicle_id=8, service_id=12,
             part=ManualServicePartCreate(source="manual", name="Synthetic"))
-    assert events == ["reserve", "insert", "track"]
+    assert events == ["reserve", "insert", "capture", "commit", "track"]
     native.reserve_part_snapshot.assert_called_once_with(12, 8, 7, name="Synthetic")
     native.track_part_snapshot.assert_called_once_with(20, 12, 8, 7, "Synthetic")
+
+
+@pytest.mark.parametrize("failure", ["lost-ack", "response-preparation"])
+def test_browser_attachment_captures_id_before_preparation_or_lost_ack_failure(guarded_setup, monkeypatch, failure):
+    settings, native, _, _ = guarded_setup
+    native.require_reserved_parts.return_value = True
+    result = SimpleNamespace(id=20, name="Synthetic")
+    events = []
+    native.remember_part_snapshot.side_effect = lambda *a: events.append("capture")
+    def insert(*args, **kwargs):
+        kwargs["prepare_response"](result)
+        events.append("commit")
+        raise RuntimeError("Synthetic lost acknowledgment")
+    def prepare(value):
+        assert value is result
+        events.append("prepare")
+        if failure == "response-preparation":
+            raise RuntimeError("Synthetic response preparation failure")
+    monkeypatch.setattr(service_part_queries, "attach_service_part", insert)
+    with manual.prepared_test_backend():
+        with pytest.raises(RuntimeError):
+            service_part_queries.attach_service_part(settings, actor=Mock(user=Mock(id=7, email="reserved-0@example.com")),
+                vehicle_id=8, service_id=12, part=ManualServicePartCreate(source="manual", name="Synthetic"), prepare_response=prepare)
+    assert events == (["capture", "prepare", "commit"] if failure == "lost-ack" else ["capture", "prepare"])
+    native.remember_part_snapshot.assert_called_once_with(20, 12, 8, 7, "Synthetic")
+    native.track_part_snapshot.assert_not_called()
 
 
 def test_browser_catalog_attachment_never_uses_ordinary_catalog_rows(guarded_setup, monkeypatch):

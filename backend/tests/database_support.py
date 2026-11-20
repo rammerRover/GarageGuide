@@ -377,6 +377,23 @@ class NativeTestDatabase:
         self.cleanup_verified = False
         return name
 
+    def remember_part_snapshot(self, snapshot_id, service_id, vehicle_id, user_id, name):
+        """Capture an ID from this fixture's INSERT RETURNING, before commit.
+
+        Never call this from a discovery scan. A rollback leaves a harmless
+        absent ID; a lost acknowledgment retains the exact ID for cleanup.
+        """
+        self._require_service_fixture(service_id, vehicle_id, user_id)
+        reservation = (service_id, vehicle_id, user_id, name)
+        if reservation not in self._part_reservations:
+            raise TestDatabaseSafetyError("Snapshot must be reserved before writing")
+        if type(snapshot_id) is not int or not 1 <= snapshot_id <= 2147483647:
+            raise TestDatabaseSafetyError("Snapshot requires an exact returned integer ID")
+        if snapshot_id in self._parts and self._parts[snapshot_id] != reservation:
+            raise TestDatabaseSafetyError("Snapshot ID already belongs to another fixture reservation")
+        self._parts[snapshot_id] = reservation
+        self.cleanup_verified = False
+
     def track_part_snapshot(self, snapshot_id, service_id, vehicle_id, user_id, name):
         self._require_service_fixture(service_id, vehicle_id, user_id)
         reservation = (service_id, vehicle_id, user_id, name)
@@ -392,8 +409,7 @@ class NativeTestDatabase:
             ).fetchone()
         if row != (snapshot_id,):
             raise TestDatabaseSafetyError("Synthetic snapshot ownership could not be verified")
-        self._parts[snapshot_id] = reservation
-        self.cleanup_verified = False
+        self.remember_part_snapshot(snapshot_id, service_id, vehicle_id, user_id, name)
 
     def require_reserved_parts(self, service_id, vehicle_id, user_id):
         if not self.require_reserved_service(service_id, vehicle_id, user_id):
@@ -408,9 +424,8 @@ class NativeTestDatabase:
             ).fetchall()
         for snapshot_id, name in rows:
             reservation = (service_id, vehicle_id, user_id, name)
-            if self._parts.get(snapshot_id) != reservation and reservation not in self._part_reservations:
+            if self._parts.get(snapshot_id) != reservation:
                 raise TestDatabaseSafetyError("Only reserved synthetic part snapshots may be accessed")
-            self._parts[snapshot_id] = reservation
         return True
 
     def require_reserved_catalog_pair(self, manufacturer, part_number):
@@ -539,7 +554,8 @@ class NativeTestDatabase:
                 (service_id, vehicle_id, user_id, name),
             ).fetchall()
             for (part_id,) in rows:
-                self._parts[part_id] = (service_id, vehicle_id, user_id, name)
+                if self._parts.get(part_id) != (service_id, vehicle_id, user_id, name):
+                    raise TestDatabaseSafetyError("Unexpected snapshot ID; name matches cannot establish fixture ownership")
         for vehicle_id, user_id, name in self._schedule_reservations:
             rows = connection.execute(
                 "SELECT m.id FROM public.maintenance_schedules AS m "

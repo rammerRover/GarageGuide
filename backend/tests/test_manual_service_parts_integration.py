@@ -55,3 +55,26 @@ def test_guarded_catalog_delete_refuses_untracked_reference_without_changing_dat
         native_database._parts[saved.id] = reservation
     assert listing(native_database, actor, vehicle, record).parts == [saved]
     assert native_database.require_reserved_catalog_pair(preview.manufacturer, preview.part_number)
+
+
+def test_untracked_same_name_snapshot_blocks_guard_and_cleanup_without_deletion(native_database, actors, owned):
+    from test_service_part_queries_integration import manual as manual_request
+    vehicle, record = owned
+    actor = actors[0]
+    request = manual_request(native_database, actor, vehicle, record)
+    first = attach(native_database, actor, vehicle, record, request)
+    second = attach(native_database, actor, vehicle, record, request)
+    before = parent_state(native_database, actor, vehicle, record)
+    # Both IDs belong to this test. Hide one only to exercise refusal of an
+    # unknown row, and restore it even on failure so final teardown stays exact.
+    reservation = native_database._parts.pop(second.id)
+    try:
+        with pytest.raises(TestDatabaseSafetyError, match="synthetic part"):
+            native_database.require_reserved_parts(record.id, vehicle.id, actor.user.id)
+        with pytest.raises(TestDatabaseSafetyError, match="Unexpected snapshot ID"):
+            native_database.cleanup()
+        assert native_database._parts == {first.id: reservation}
+        assert listing(native_database, actor, vehicle, record).parts == [first, second]
+        assert parent_state(native_database, actor, vehicle, record) == before
+    finally:
+        native_database._parts[second.id] = reservation

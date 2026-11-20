@@ -45,8 +45,13 @@ def catalog_request(native, actor, vehicle, record, preview, **values):
 
 
 def attach(native, actor, vehicle, record, request, **options):
+    prepare_response = options.pop("prepare_response", None)
+    def prepare(result):
+        native.remember_part_snapshot(result.id, record.id, vehicle.id, actor.user.id, result.name)
+        if prepare_response is not None:
+            prepare_response(result)
     result = queries.attach_service_part(native.settings, actor=actor, vehicle_id=vehicle.id,
-                                         service_id=record.id, part=request, **options)
+                                         service_id=record.id, part=request, prepare_response=prepare, **options)
     native.track_part_snapshot(result.id, record.id, vehicle.id, actor.user.id, result.name)
     return result
 
@@ -252,7 +257,7 @@ def test_native_rollback_closure_and_uncertain_commit_recovery(native_database, 
     count = len(listing(native_database, actor, vehicle, record).parts)
     assert count == (int(failure != "lost-ack") if operation == "remove" else int(failure == "lost-ack"))
     if failure == "lost-ack":
-        # Recover a committed attachment even though no return value was tracked.
+        # The pre-commit callback retained the exact ID despite the lost return.
         native_database.cleanup()
         assert native_database.cleanup_verified
         assert native_database.cleanup_link_counts[0] >= 1
