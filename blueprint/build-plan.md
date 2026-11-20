@@ -24,7 +24,7 @@ Plan must not be introduced during these feature loops.
 - [x] 4. **View and update a vehicle profile.** Let the owner review and correct
   vehicle details and current readings while preserving readings already saved
   with historical service records.
-- [ ] 5. **Record and review service history.** Create, list, edit, and remove
+- [x] 5. **Record and review service history.** Create, list, edit, and remove
   dated maintenance, repair, inspection, and diagnostic records with
   descriptions, optional readings, optional cost, notes, and clear ownership
   checks.
