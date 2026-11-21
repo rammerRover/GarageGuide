@@ -28,7 +28,7 @@ Plan must not be introduced during these feature loops.
   dated maintenance, repair, inspection, and diagnostic records with
   descriptions, optional readings, optional cost, notes, and clear ownership
   checks.
-- [ ] 6. **Record parts used during a service.** Save catalog-backed or manual
+- [x] 6. **Record parts used during a service.** Save catalog-backed or manual
   part snapshots with the service so historical part details remain available
   even if a saved reference or catalog entry later changes or is removed.
 - [ ] 7. **Create and update maintenance schedules.** Support positive day,
