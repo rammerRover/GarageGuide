@@ -4,6 +4,19 @@ Feature 6: Record parts used during a service.
 
 ## Current status
 
+**Blocking fixture repairs F-05/F-07, November 20, 2026:** The two native API
+writes now register exact snapshot IDs immediately on receiving their responses,
+before header assertions. Catalog teardown never adopts IDs discovered at a
+reserved pair; trusted catalog writers capture exact IDs before commit.
+Focused database-free checks pass. The seven separately approved guarded native
+cases passed with exact cleanup as recorded below. Application, HTTP contracts
+and frontend behavior are unchanged, so no new browser check was run or proposed.
+F-05/F-07 remain open pending independent review;
+F-06 remains closed, and F-04/F-08 stay open and unchanged. The active audit
+receipt is preserved as historical/stale evidence for the changed code.
+
+### Earlier checkpoint and F-05/F-06 repair status (historical)
+
 **F-05/F-06 repair, November 20, 2026:** Targeted code and database-free
 regressions are implemented; both P1 findings remain OPEN pending independent
 verification. F-04 remains unchanged, open P2/nonblocking. The checkpoint and
@@ -364,3 +377,73 @@ the unchanged historical audit receipt and findings records are excluded.
 F-05/F-06 stay OPEN pending independent review and F-04 remains unchanged.
 No staging, commit, audit, completion, merge or push has occurred during this
 repair. Only documentation/hash/whitespace work was needed for this update.
+
+## Targeted F-05/F-07 fixture repair
+
+Parent checkpoint remains `8eb3b63cad61649ea702f0f98d9c3cba65ef66d4` on
+`feature/record-parts-used-during-a-service`. The current Sol receipt and complete
+findings ledger are byte-identical to their copies at ignored
+`blueprint/.state/staging/feature-6-f05-f07-repair/historical-review.md` and
+`historical-findings.md`. No finding was closed, accepted, reclassified or edited
+by this repair. The active specification and application code are unchanged.
+
+F-05: both the manual and catalog positive API writes register their response's
+exact snapshot ID before header checks or other test assertions. The later
+database verification remains. A database-free regression invokes the real
+native test body for each write, injects a later header assertion failure, and
+uses the real linked-fixture finalizer with mock SQL to prove only the already
+registered IDs are deleted. A response without a usable ID cannot establish
+ownership; cleanup must continue to fail safely instead of guessing.
+
+F-07: catalog IDs are captured from the fixture's own INSERT RETURNING before
+commit, including create/replace terminal controls and both native replacement
+helpers. The discovery scan checks for unknown IDs and raises a safety error
+without adopting/deleting them. Known IDs survive edits and lost acknowledgments.
+Tests cover unknown replacements with/without a tracked original, no deletion
+or registry adoption on failure, exact known replacements, invalid IDs and
+pre-commit capture before a lost-acknowledgment exception. Separate guarded
+verification and the existing physical database guards remain unchanged.
+
+Focused command:
+
+```powershell
+backend/.venv/Scripts/python.exe -m pytest -q -c backend/pyproject.toml backend/tests/test_service_part_api_fixture_safety.py backend/tests/test_service_part_fixture_safety.py backend/tests/test_manual_service_parts.py backend/tests/test_manual_registration_server.py -m "not integration" -p no:cacheprovider --tb=short
+```
+
+Result: **110 passed**, no failures, one existing Starlette/AnyIO deprecation
+warning. Tracked and untracked repair-file whitespace checks passed. No unchanged
+full suite, frontend suite, lint/build or pip check was rerun for fixture-only
+changes. Earlier native passes remain historical, separate from the fresh
+seven-case result below. No new browser-execution claim is made.
+
+The user approved exactly seven native cases: both positive API
+later-assertion/cleanup paths, unknown catalog replacement refusal, guarded
+catalog controller lifecycle, native API and query replacements, and known-ID
+cleanup after catalog identity edits. That exact set ran: **7 passed, 0 failures,
+0 skips, 17.69 seconds**, with one existing Starlette/AnyIO deprecation warning.
+No case was added, and no full suite or browser check ran.
+
+RUN_DB_TESTS=1 and .env.test settings were used. The effective database was
+garageguide_app_test; every new physical connection performed its first-statement
+current_database() guard. Cleanup used exact fixture IDs and separate guarded
+absence verification. All seven cleanup receipts verified **14 users, 14 sessions,
+7 vehicles, 7 services, 6 snapshot IDs and 10 catalog IDs absent**. No completion
+or schedule fixture was created. These are tracked IDs verified absent, including
+already removed/rolled-back identities, not global deletion totals. No real guard
+or teardown failure occurred; the unknown-row case's expected rejection was
+caught and its own hidden ID restored in finally for exact final cleanup.
+
+The approved node list, exact executed command and raw native.log/native.xml
+are retained in ignored blueprint/.state/staging/feature-6-f05-f07-repair/.
+native-cleanup.json records each receipt and aggregate counts; every executed
+node/count was matched to the approved proposal. There were no schema changes,
+broad deletions or sequence resets. Receipt parsing and this documentation
+update did not open additional database connections or rerun runtime checks.
+
+The final nine-file repair checkpoint proposal freezes the current exact paths,
+raw hashes, diff, reused 110 focused passes and fresh seven-case native evidence.
+It excludes the historical audit records and active specification. F-05/F-07
+stay open for independent verification; F-06 stays closed and nonblocking
+F-04/F-08 remain open, unchanged. No further repair scope was introduced.
+
+No staging, commit, audit, completion, merge or push occurred during this repair.

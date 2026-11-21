@@ -378,10 +378,11 @@ class NativeTestDatabase:
         return name
 
     def remember_part_snapshot(self, snapshot_id, service_id, vehicle_id, user_id, name):
-        """Capture an ID from this fixture's INSERT RETURNING, before commit.
+        """Record an exact ID returned by this fixture's own INSERT or API write.
 
-        Never call this from a discovery scan. A rollback leaves a harmless
-        absent ID; a lost acknowledgment retains the exact ID for cleanup.
+        Capture before commit when available, or immediately on API receipt
+        before assertions. Never call from discovery scans. Absent rolled-back
+        IDs are harmless; a captured ID survives a lost acknowledgment.
         """
         self._require_service_fixture(service_id, vehicle_id, user_id)
         reservation = (service_id, vehicle_id, user_id, name)
@@ -453,6 +454,18 @@ class NativeTestDatabase:
         self.cleanup_verified = False
         return fields
 
+    def remember_catalog_part(self, part_id, manufacturer, part_number):
+        """Capture this fixture's exact INSERT RETURNING ID before commit."""
+        pair = (manufacturer, part_number)
+        if pair not in self._catalog_reservations:
+            raise TestDatabaseSafetyError("Catalog row must be reserved before writing")
+        if type(part_id) is not int or not 1 <= part_id <= 2147483647:
+            raise TestDatabaseSafetyError("Catalog fixture requires an exact returned integer ID")
+        if part_id in self._catalog_parts and self._catalog_parts[part_id] != pair:
+            raise TestDatabaseSafetyError("Catalog ID already belongs to another fixture reservation")
+        self._catalog_parts[part_id] = pair
+        self.cleanup_verified = False
+
     def track_catalog_part(self, part_id, manufacturer, part_number):
         pair = (manufacturer, part_number)
         if pair not in self._catalog_reservations:
@@ -464,8 +477,7 @@ class NativeTestDatabase:
             ).fetchone()
         if row != (part_id,):
             raise TestDatabaseSafetyError("Synthetic catalog identity could not be verified")
-        self._catalog_parts[part_id] = pair
-        self.cleanup_verified = False
+        self.remember_catalog_part(part_id, manufacturer, part_number)
 
     def _delete_catalog_fixtures(self, connection):
         if not self._catalog_reservations and not self._catalog_parts:
@@ -475,7 +487,8 @@ class NativeTestDatabase:
                 "SELECT id FROM public.parts WHERE manufacturer = %s AND part_number = %s", pair,
             ).fetchall()
             for (part_id,) in rows:
-                self._catalog_parts.setdefault(part_id, pair)
+                if self._catalog_parts.get(part_id) != pair:
+                    raise TestDatabaseSafetyError("Unexpected catalog ID; a pair match cannot establish fixture ownership")
         for part_id in self._catalog_parts:
             row = connection.execute("SELECT id FROM public.parts WHERE id = %s FOR UPDATE", (part_id,)).fetchone()
             if row is None:

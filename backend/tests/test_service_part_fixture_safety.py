@@ -79,14 +79,12 @@ def test_catalog_guard_rejects_wrong_physical_database_before_any_fixture_query(
     assert not native._catalog_reservations
 
 
-@pytest.mark.parametrize("tracked", [False, True])
-def test_catalog_only_cleanup_recovers_lost_ack_and_uses_separate_guarded_verification(settings, tracked):
+def test_catalog_only_cleanup_keeps_precommit_id_after_lost_ack_and_uses_separate_verification(settings):
     writer = connection_with((TEST_DATABASE,), [(22,)], (22,), (False,), None)
     reader = connection_with((TEST_DATABASE,), [], [], [], [])
     native = NativeTestDatabase(settings, Mock(side_effect=[writer, reader]))
     native._catalog_reservations.add(("synthetic-maker", "synthetic-number"))
-    if tracked:
-        native._catalog_parts[22] = ("synthetic-maker", "synthetic-number")
+    native.remember_catalog_part(22, "synthetic-maker", "synthetic-number")
     native.cleanup()
     deletes = [call.args for call in writer.execute.call_args_list if call.args[0].startswith("DELETE")]
     assert deletes == [("DELETE FROM public.parts WHERE id = %s", (22,))]
@@ -122,9 +120,62 @@ def test_remaining_catalog_rows_prevent_claiming_cleanup_success(settings):
     reader = connection_with((TEST_DATABASE,), [], [], [(22,)], [])
     native = NativeTestDatabase(settings, Mock(side_effect=[writer, reader]))
     native._catalog_reservations.add(("synthetic-maker", "synthetic-number"))
+    native.remember_catalog_part(22, "synthetic-maker", "synthetic-number")
     with pytest.raises(pytest.fail.Exception, match="verification failed"):
         native.cleanup()
     assert not native.cleanup_verified and native._catalog_parts == {22: ("synthetic-maker", "synthetic-number")}
+
+
+@pytest.mark.parametrize("known,rows", [(False, [(23,)]), (True, [(23,)]), (True, [(22,), (23,)])])
+def test_unknown_catalog_replacement_stops_cleanup_without_adoption_or_deletion(settings, known, rows):
+    writer = connection_with((TEST_DATABASE,), rows)
+    native = NativeTestDatabase(settings, Mock(return_value=writer))
+    native._catalog_reservations.add(("synthetic-maker", "synthetic-number"))
+    if known:
+        native.remember_catalog_part(22, "synthetic-maker", "synthetic-number")
+    before = dict(native._catalog_parts)
+    with pytest.raises(TestDatabaseSafetyError, match="Unexpected catalog ID"):
+        native.cleanup()
+    assert native._catalog_parts == before and 23 not in native._catalog_parts
+    assert not any(call.args[0].startswith("DELETE") for call in writer.execute.call_args_list)
+    assert writer.__exit__.call_args.args[0] is TestDatabaseSafetyError
+    assert not native.cleanup_verified and native._catalog_reservations
+
+
+def test_fixture_created_catalog_replacement_is_known_before_ack_and_cleaned_by_exact_ids(settings):
+    writer = connection_with([(23,)], None, (23,), (False,), None)
+    native = NativeTestDatabase(settings, Mock())
+    native._catalog_reservations.add(("synthetic-maker", "synthetic-number"))
+    native.remember_catalog_part(22, "synthetic-maker", "synthetic-number")
+    native.remember_catalog_part(23, "synthetic-maker", "synthetic-number")
+    native._delete_catalog_fixtures(writer)
+    deletes = [call.args for call in writer.execute.call_args_list if call.args[0].startswith("DELETE")]
+    assert deletes == [("DELETE FROM public.parts WHERE id = %s", (23,))]
+    assert set(native._catalog_parts) == {22, 23}
+
+
+@pytest.mark.parametrize("part_id", [None, True, "22", 0, -1, 2147483648])
+def test_catalog_capture_requires_a_returned_integer_id_and_no_connection(settings, part_id):
+    connect = Mock()
+    native = NativeTestDatabase(settings, connect)
+    native._catalog_reservations.add(("synthetic", "number"))
+    with pytest.raises(TestDatabaseSafetyError, match="integer ID"):
+        native.remember_catalog_part(part_id, "synthetic", "number")
+    connect.assert_not_called()
+    assert not native._catalog_parts
+
+
+def test_catalog_capture_requires_reservation_and_cannot_reassign_ids(settings):
+    connect = Mock()
+    native = NativeTestDatabase(settings, connect)
+    with pytest.raises(TestDatabaseSafetyError, match="reserved before"):
+        native.remember_catalog_part(22, "ordinary", "ordinary")
+    native._catalog_reservations.update({("first", "number"), ("second", "number")})
+    native.remember_catalog_part(22, "first", "number")
+    with pytest.raises(TestDatabaseSafetyError, match="another fixture"):
+        native.remember_catalog_part(22, "second", "number")
+    assert native._catalog_parts == {22: ("first", "number")}
+    connect.assert_not_called()
 
 
 def test_catalog_schema_guard_is_read_only_and_rejects_missing_constraints(settings):

@@ -78,3 +78,29 @@ def test_untracked_same_name_snapshot_blocks_guard_and_cleanup_without_deletion(
         assert parent_state(native_database, actor, vehicle, record) == before
     finally:
         native_database._parts[second.id] = reservation
+
+
+def test_untracked_catalog_replacement_blocks_cleanup_and_preserves_row(native_database, actors, owned):
+    vehicle, record = owned
+    actor = actors[0]
+    application = controller(native_database)
+    original = manual.browser_catalog_command(application, "create")
+    replacement = manual.browser_catalog_command(application, "replace")
+    assert replacement.id != original.id
+    before = parent_state(native_database, actor, vehicle, record)
+    # This test owns both IDs. Temporarily hide only its replacement identity
+    # to exercise unknown-writer refusal, restoring it even on assertion failure.
+    reservation = native_database._catalog_parts.pop(replacement.id)
+    try:
+        with pytest.raises(TestDatabaseSafetyError, match="Unexpected catalog ID"):
+            native_database.cleanup()
+        assert replacement.id not in native_database._catalog_parts
+        with native_database.connect(native_database.settings, read_only=True) as connection:
+            row = connection.execute(
+                "SELECT id, manufacturer, part_number, name, category FROM public.parts WHERE id = %s",
+                (replacement.id,),
+            ).fetchone()
+        assert row == tuple(replacement.model_dump().values())
+        assert parent_state(native_database, actor, vehicle, record) == before
+    finally:
+        native_database._catalog_parts[replacement.id] = reservation

@@ -122,9 +122,41 @@ def test_catalog_create_is_reserved_before_insertion_and_tracked_afterwards():
     native.reserve_catalog_part.return_value = fields
     result = manual.browser_catalog_command(application, "create")
     assert result == PREVIEW
-    assert [call[0] for call in native.method_calls] == ["reserve_catalog_part", "connect", "track_catalog_part"]
+    assert [call[0] for call in native.method_calls] == ["reserve_catalog_part", "connect", "remember_catalog_part", "track_catalog_part"]
+    native.remember_catalog_part.assert_called_once_with(22, PREVIEW.manufacturer, PREVIEW.part_number)
     native.track_catalog_part.assert_called_once_with(22, PREVIEW.manufacturer, PREVIEW.part_number)
     assert connection.execute.call_args.args[1] == tuple(fields.values())
+
+
+@pytest.mark.parametrize("command", ["create", "replace"])
+@pytest.mark.parametrize("lost_ack", [False, True])
+def test_browser_catalog_insert_captures_exact_id_before_commit_or_lost_ack(command, lost_ack):
+    created = PREVIEW.model_copy(update={"id": 33})
+    rows = tuple(created.model_dump().values())
+    connection = connection_with(rows) if command == "create" else connection_with((22,), [], (False,), None, rows)
+    application, native = context_for(connection, preview=None if command == "create" else PREVIEW)
+    native.reserve_catalog_part.return_value = created.model_dump(exclude={"id"})
+    events = []
+    def capture(part_id, manufacturer, part_number):
+        events.append("capture")
+        native._catalog_parts[part_id] = (manufacturer, part_number)
+    def exit_transaction(*args):
+        events.append("commit")
+        if lost_ack:
+            raise RuntimeError("Synthetic lost catalog acknowledgment")
+        return False
+    native.remember_catalog_part.side_effect = capture
+    native.track_catalog_part.side_effect = lambda *args: events.append("verify")
+    connection.__exit__.side_effect = exit_transaction
+    if lost_ack:
+        with pytest.raises(RuntimeError, match="lost catalog acknowledgment"):
+            manual.browser_catalog_command(application, command)
+        native.track_catalog_part.assert_not_called()
+    else:
+        assert manual.browser_catalog_command(application, command) == created
+    assert events == (["capture", "commit"] if lost_ack else ["capture", "commit", "verify"])
+    native.remember_catalog_part.assert_called_once_with(33, PREVIEW.manufacturer, PREVIEW.part_number)
+    assert native._catalog_parts[33] == (PREVIEW.manufacturer, PREVIEW.part_number)
 
 
 def test_catalog_change_targets_only_the_owned_id():

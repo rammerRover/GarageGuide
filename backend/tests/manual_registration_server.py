@@ -268,6 +268,7 @@ def browser_catalog_command(application, command):
                 "RETURNING id, manufacturer, part_number, name, category",
                 tuple(fields[key] for key in ("manufacturer", "part_number", "name", "category")),
             ).fetchone()
+            native.remember_catalog_part(row[0], row[1], row[2])
     else:
         if preview is None or preview.id not in native._catalog_parts:
             raise TestDatabaseSafetyError("No exact fixture-owned catalog entry is active")
@@ -306,6 +307,7 @@ def browser_catalog_command(application, command):
                         "RETURNING id, manufacturer, part_number, name, category",
                         (preview.manufacturer, preview.part_number, preview.name, preview.category),
                     ).fetchone()
+                    native.remember_catalog_part(row[0], row[1], row[2])
     result = CatalogPartPreview(**dict(zip(service_part_queries.CATALOG_FIELDS, row, strict=True))) if row is not None else None
     if result is not None:
         native.track_catalog_part(result.id, result.manufacturer, result.part_number)

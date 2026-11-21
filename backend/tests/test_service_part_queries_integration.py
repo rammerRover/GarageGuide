@@ -29,6 +29,7 @@ def create_catalog(native):
             "RETURNING id, manufacturer, part_number, name, category",
             tuple(fields[key] for key in ("manufacturer", "part_number", "name", "category")),
         ).fetchone()
+        native.remember_catalog_part(row[0], row[1], row[2])
     result = CatalogPartPreview(**dict(zip(queries.CATALOG_FIELDS, row, strict=True)))
     native.track_catalog_part(result.id, result.manufacturer, result.part_number)
     return result
@@ -170,6 +171,7 @@ def test_changed_disappeared_or_replaced_preview_writes_nothing(native_database,
                     "INSERT INTO public.parts (manufacturer, part_number, name, category) VALUES (%s, %s, %s, %s) RETURNING id",
                     (catalog.manufacturer, catalog.part_number, catalog.name, catalog.category),
                 ).fetchone()[0]
+                native_database.remember_catalog_part(replacement, catalog.manufacturer, catalog.part_number)
         else:
             # The identifier is selected only from this fixed test parameter set.
             connection.execute(f"UPDATE public.parts SET {change} = %s WHERE id = %s", (getattr(catalog, change) + " changed", catalog.id))

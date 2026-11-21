@@ -52,6 +52,7 @@ def test_native_manual_catalog_list_confirmed_removal_and_service_link_protectio
     assert empty.json() == {"vehicle_id": vehicle.id, "service_record_id": record.id, "parts": []}
     request = manual(native_database, actor, vehicle, record, quantity=2147483647, notes="\ufeffHistorical\ufeff")
     one = client.post(address, json=request.model_dump(), headers=AUTH_HEADERS)
+    native_database.remember_part_snapshot(one.json()["id"], record.id, vehicle.id, actor.user.id, request.name)
     assert_headers(one, 201, native_database, first)
     native_database.track_part_snapshot(one.json()["id"], record.id, vehicle.id, actor.user.id, request.name)
     assert one.json()["part_id"] is None and one.json()["quantity"] == 2147483647
@@ -62,6 +63,7 @@ def test_native_manual_catalog_list_confirmed_removal_and_service_link_protectio
     catalog_body = catalog_request(native_database, actor, vehicle, record, catalog).model_dump()
     del catalog_body["quantity"]
     two = client.post(address, json=catalog_body, headers=AUTH_HEADERS)
+    native_database.remember_part_snapshot(two.json()["id"], record.id, vehicle.id, actor.user.id, catalog.name)
     assert_headers(two, 201, native_database, first)
     native_database.track_part_snapshot(two.json()["id"], record.id, vehicle.id, actor.user.id, catalog.name)
     assert two.json()["quantity"] == 1 and two.json()["part_id"] == catalog.id
@@ -83,6 +85,29 @@ def test_native_manual_catalog_list_confirmed_removal_and_service_link_protectio
         assert connection.execute("SELECT id FROM public.parts WHERE id = %s", (catalog.id,)).fetchone() == (catalog.id,)
 
 
+@pytest.mark.parametrize("failed_write", ["manual", "catalog"])
+def test_native_response_id_survives_later_assertion_and_exact_cleanup(client, native_database, accounts, owned_api, monkeypatch, failed_write):
+    original_headers = assert_headers
+    acknowledged = 0
+    expected = 1 if failed_write == "manual" else 2
+    def later_assertion(response, *args, **kwargs):
+        nonlocal acknowledged
+        original_headers(response, *args, **kwargs)
+        if response.status_code == 201:
+            acknowledged += 1
+            if acknowledged == expected:
+                raise AssertionError("Synthetic later header assertion")
+    with monkeypatch.context() as changes:
+        changes.setitem(globals(), "assert_headers", later_assertion)
+        with pytest.raises(AssertionError, match="Synthetic later header assertion"):
+            test_native_manual_catalog_list_confirmed_removal_and_service_link_protection(
+                client, native_database, accounts, owned_api)
+    assert acknowledged == len(native_database._parts) == expected
+    native_database.cleanup()
+    assert native_database.cleanup_verified
+    assert native_database.cleanup_link_counts[0] == expected
+
+
 @pytest.mark.parametrize("change", ["name", "category", "delete", "replace"])
 def test_native_reviewed_preview_conflicts_are_fixed_and_leave_no_attachment(client, native_database, accounts, owned_api, change):
     first = accounts[0]
@@ -99,6 +124,7 @@ def test_native_reviewed_preview_conflicts_are_fixed_and_leave_no_attachment(cli
                     "INSERT INTO public.parts (manufacturer, part_number, name, category) VALUES (%s, %s, %s, %s) RETURNING id",
                     (catalog.manufacturer, catalog.part_number, catalog.name, catalog.category),
                 ).fetchone()[0]
+                native_database.remember_catalog_part(replacement, catalog.manufacturer, catalog.part_number)
         else:
             connection.execute(f"UPDATE public.parts SET {change} = %s WHERE id = %s", (getattr(catalog, change) + " changed", catalog.id))
     if replacement is not None:
