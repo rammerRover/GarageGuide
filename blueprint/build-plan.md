@@ -31,7 +31,7 @@ Plan must not be introduced during these feature loops.
 - [x] 6. **Record parts used during a service.** Save catalog-backed or manual
   part snapshots with the service so historical part details remain available
   even if a saved reference or catalog entry later changes or is removed.
-- [ ] 7. **Create and update maintenance schedules.** Support positive day,
+- [x] 7. **Create and update maintenance schedules.** Support positive day,
   mileage, and operating-hour intervals with matching baselines, source notes,
   validation, and duplicate-task review without inventing manufacturer
   recommendations.

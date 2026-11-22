@@ -15,7 +15,7 @@ if __name__ == "__main__":
 import pytest
 import uvicorn
 
-from app import database, service_part_queries, service_queries, session_queries, user_queries, vehicle_queries
+from app import database, maintenance_schedule_queries, service_part_queries, service_queries, session_queries, user_queries, vehicle_queries
 from app.service_part_schemas import CatalogPartPreview
 from app.service_schemas import ServiceCreate
 from app.config import get_auth_settings, get_settings, load_auth_settings, load_settings
@@ -39,6 +39,9 @@ def prepared_test_backend(*, service_links=False, service_parts=False):
     original_create_vehicle = vehicle_queries.create_vehicle
     original_get_vehicle = vehicle_queries.get_vehicle
     original_update_vehicle = vehicle_queries.update_vehicle
+    original_list_schedules = maintenance_schedule_queries.list_maintenance_schedules
+    original_create_schedule = maintenance_schedule_queries.create_maintenance_schedule
+    original_update_schedule = maintenance_schedule_queries.update_maintenance_schedule
     original_list_services = service_queries.list_services
     original_create_service = service_queries.create_service
     original_get_service = service_queries.get_service
@@ -109,17 +112,43 @@ def prepared_test_backend(*, service_links=False, service_parts=False):
             options = {"prepare_response": prepare_response} if prepare_response is not None else {}
             return original_update_vehicle(settings, actor=actor, vehicle_id=vehicle_id, patch=patch, **options)
 
-        def service_parent(actor, vehicle_id):
+        def require_owned_fixture_vehicle(actor, vehicle_id):
             native.track_user(actor.user.id, actor.user.email)
             if not native.require_reserved_vehicle(vehicle_id, actor.user.id):
                 raise vehicle_queries.VehicleNotFoundError()
 
+        def list_reserved_schedules(settings, *, actor, vehicle_id, prepare_response=None):
+            require_owned_fixture_vehicle(actor, vehicle_id)
+            return original_list_schedules(settings, actor=actor, vehicle_id=vehicle_id, prepare_response=prepare_response)
+
+        def create_reserved_schedule(settings, *, actor, vehicle_id, schedule, prepare_response=None):
+            require_owned_fixture_vehicle(actor, vehicle_id)
+            reservation = native.reserve_maintenance_schedule(vehicle_id, actor.user.id)
+
+            def prepare(result):
+                native.remember_maintenance_schedule(result.id, vehicle_id, actor.user.id, reservation)
+                if prepare_response is not None:
+                    prepare_response(result)
+
+            return original_create_schedule(
+                settings, actor=actor, vehicle_id=vehicle_id, schedule=schedule, prepare_response=prepare,
+            )
+
+        def update_reserved_schedule(settings, *, actor, vehicle_id, schedule_id, patch, prepare_response=None):
+            require_owned_fixture_vehicle(actor, vehicle_id)
+            if not native.is_tracked_schedule(schedule_id, vehicle_id, actor.user.id):
+                raise maintenance_schedule_queries.MaintenanceScheduleNotFoundError()
+            return original_update_schedule(
+                settings, actor=actor, vehicle_id=vehicle_id, schedule_id=schedule_id, patch=patch,
+                prepare_response=prepare_response,
+            )
+
         def list_reserved_services(settings, *, actor, vehicle_id, prepare_response=None):
-            service_parent(actor, vehicle_id)
+            require_owned_fixture_vehicle(actor, vehicle_id)
             return original_list_services(settings, actor=actor, vehicle_id=vehicle_id, prepare_response=prepare_response)
 
         def create_reserved_service(settings, *, actor, vehicle_id, service, prepare_response=None):
-            service_parent(actor, vehicle_id)
+            require_owned_fixture_vehicle(actor, vehicle_id)
             native.reserve_service(vehicle_id, actor.user.id, service)
             created = original_create_service(settings, actor=actor, vehicle_id=vehicle_id, service=service, prepare_response=prepare_response)
             native.track_service(created.id, vehicle_id, actor.user.id, service)
@@ -188,6 +217,9 @@ def prepared_test_backend(*, service_links=False, service_parts=False):
                 (vehicle_queries, "create_vehicle", create_reserved_vehicle),
                 (vehicle_queries, "get_vehicle", get_reserved_vehicle),
                 (vehicle_queries, "update_vehicle", update_reserved_vehicle),
+                (maintenance_schedule_queries, "list_maintenance_schedules", list_reserved_schedules),
+                (maintenance_schedule_queries, "create_maintenance_schedule", create_reserved_schedule),
+                (maintenance_schedule_queries, "update_maintenance_schedule", update_reserved_schedule),
                 (service_queries, "list_services", list_reserved_services),
                 (service_queries, "create_service", create_reserved_service),
                 (service_queries, "get_service", get_reserved_service),
@@ -239,6 +271,7 @@ def prepare_browser_service_links(native, settings, actor, vehicle_id):
                     "SELECT id, %s, %s, %s FROM public.vehicles WHERE id = %s AND user_id = %s RETURNING id",
                     (name, 30, date.today(), vehicle_id, actor.user.id),
                 ).fetchone()[0]
+                native.remember_maintenance_schedule(schedule_id, vehicle_id, actor.user.id, name)
             native.reserve_maintenance_completion(schedule_id, record.id, vehicle_id, actor.user.id)
             with native.connect(settings) as connection:
                 connection.execute(

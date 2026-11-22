@@ -1,5 +1,9 @@
 import { parseSessionDeadline } from './sessionDeadline.js'
 import {
+  duplicateScheduleMessage, exactScheduleShape, isOwnedScheduleList, isPublicSchedule,
+  parseScheduleConflict, parseScheduleErrors, scheduleIdMessage,
+} from './scheduleValidation.js'
+import {
   catalogConflictMessage, catalogMissingMessage, exactPartShape, isCatalogPreview, isPartList,
   isPartRemoval, isServicePartId, matchesPartInput, parsePartErrors, partMessages,
   preparePartInput, preparePartLookup, snapshotIdMessage,
@@ -567,3 +571,78 @@ export function removeServicePart(vehicleId, serviceId, snapshotId, confirmed, s
   if (confirmed !== true) return Promise.resolve({ kind: 'invalid', errors: { confirm_removal: partMessages.confirm_removal }, message: 'Confirm removal first.' })
   return partRequest('remove', vehicleId, serviceId, snapshotId, { confirm_removal: true }, signal)
 }
+
+export const uncertainScheduleSave = 'The save may have completed. Reload and inspect the saved schedules before trying again. If a new task is absent, the original request may still finish. Submitting again can create a duplicate.'
+
+const scheduleFailure = (mutation) => mutation
+  ? { kind: 'uncertain', message: uncertainScheduleSave }
+  : { kind: 'unexpected', message: "We couldn't load the maintenance schedules. Please try again." }
+
+function scheduleResult(method, response, data, vehicleId, scheduleId) {
+  const mutation = method !== 'GET'
+  const failure = scheduleFailure(mutation)
+  if (response.status === (method === 'POST' ? 201 : 200)) {
+    const deadline = parseSessionDeadline(response.headers.get('X-GarageGuide-Session-Expires-At'))
+    if (!mutation) {
+      return exactScheduleShape(data, ['vehicle_id', 'schedules']) && Number.isInteger(data.vehicle_id) &&
+        String(data.vehicle_id) === vehicleId && isOwnedScheduleList(data.schedules, vehicleId)
+        ? { kind: 'success', schedules: data.schedules, deadline } : failure
+    }
+    return isPublicSchedule(data) && String(data.vehicle_id) === vehicleId &&
+      (method === 'POST' || String(data.id) === scheduleId)
+      ? { kind: 'success', schedule: data, deadline } : failure
+  }
+  if (response.status === 409 && mutation) {
+    const matches = parseScheduleConflict(data, vehicleId, scheduleId)
+    return matches ? { kind: 'duplicate', matches, message: duplicateScheduleMessage } : failure
+  }
+  if (!exactScheduleShape(data, ['detail'])) return failure
+  if (response.status === 422) {
+    const errors = parseScheduleErrors(data.detail, mutation)
+    return errors ? { kind: 'invalid', errors, message: 'Check the highlighted fields and try again.' } : failure
+  }
+  const missing = method === 'PATCH' ? 'Maintenance schedule not found.' : 'Vehicle not found.'
+  if (response.status === 404 && data.detail === missing) return { kind: 'not-found', message: missing }
+  if (response.status === 401 && data.detail === 'Not authenticated.') return { kind: 'guest' }
+  if (response.status === 403 && data.detail === 'Request not allowed.') {
+    return { kind: 'forbidden', message: 'The request was not accepted. Refresh the page and try again.' }
+  }
+  if (response.status === 503 && data.detail === 'Authentication unavailable. Please try again.') return { kind: 'authentication-unavailable' }
+  if (response.status === 503 && data.detail === 'Maintenance schedules unavailable. Please try again.') {
+    return mutation ? failure : { kind: 'unavailable', message: data.detail }
+  }
+  return failure
+}
+
+async function scheduleRequest(method, vehicleId, scheduleId, details, signal) {
+  if (!isVehicleId(vehicleId) || (method === 'PATCH' && !isVehicleId(scheduleId))) return {
+    kind: 'invalid', message: !isVehicleId(vehicleId) ? vehicleIdMessage : scheduleIdMessage,
+  }
+  if (signal?.aborted) return { kind: 'cancelled' }
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
+  const timer = setTimeout(cancel, 10000)
+  const mutation = method !== 'GET'
+  try {
+    const path = `/api/vehicles/${vehicleId}/maintenance-schedules`
+    const response = await fetch(method === 'PATCH' ? `${path}/${scheduleId}` : path, {
+      method, credentials: 'same-origin', signal: controller.signal,
+      headers: mutation ? { Accept: 'application/json', 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1' } :
+        { Accept: 'application/json' },
+      ...(mutation ? { body: JSON.stringify(details) } : {}),
+    })
+    const data = await response.json()
+    controller.signal.throwIfAborted()
+    return scheduleResult(method, response, data, vehicleId, scheduleId)
+  } catch {
+    return signal?.aborted ? { kind: 'cancelled' } : scheduleFailure(mutation)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+  }
+}
+
+export const listMaintenanceSchedules = (vehicleId, signal) => scheduleRequest('GET', vehicleId, null, undefined, signal)
+export const createMaintenanceSchedule = (vehicleId, details, signal) => scheduleRequest('POST', vehicleId, null, details, signal)
+export const updateMaintenanceSchedule = (vehicleId, scheduleId, details, signal) => scheduleRequest('PATCH', vehicleId, scheduleId, details, signal)

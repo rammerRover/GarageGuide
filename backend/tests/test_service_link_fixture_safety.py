@@ -1,5 +1,4 @@
 from datetime import date
-from unittest.mock import Mock
 
 import pytest
 
@@ -34,18 +33,16 @@ def test_link_reservations_reject_unowned_or_untracked_parents_before_connect(se
 def test_all_link_reservations_are_registered_before_writes_and_bind_exact_ownership(settings):
     part = connection_with((TEST_DATABASE,), None)
     schedule = connection_with((TEST_DATABASE,), None)
-    completion = connection_with((TEST_DATABASE,), ("synthetic-schedule",), None)
+    completion = connection_with((TEST_DATABASE,), (30,), None)
     native, _ = linked_native(settings, part, schedule, completion)
     part_name = native.reserve_part_snapshot(12, 8, 42)
     schedule_name = native.reserve_maintenance_schedule(8, 42)
-    completion.execute.side_effect = [Mock(fetchone=Mock(return_value=(TEST_DATABASE,))),
-                                      Mock(fetchone=Mock(return_value=(schedule_name,))),
-                                      Mock(fetchone=Mock(return_value=None))]
+    native.remember_maintenance_schedule(30, 8, 42, schedule_name)
     native.reserve_maintenance_completion(30, 12, 8, 42)
     assert native._part_reservations == {(12, 8, 42, part_name)}
     assert native._schedule_reservations == {(8, 42, schedule_name)}
     assert native._completion_reservations == {(30, 12, 8, 42)}
-    assert native._schedules == {30: (8, 42, schedule_name)}
+    assert native._schedules == {30: (8, 42)}
     assert part.execute.call_args.args[1] == (12, 8, 42, part_name)
     assert completion.execute.call_args.args[1] == (30, 12, 8, 42)
     for connection in (part, schedule, completion):
@@ -69,21 +66,26 @@ def test_existing_link_fixture_collision_is_not_claimed(settings, kind):
 def test_completion_never_adopts_an_unreserved_or_foreign_schedule(settings):
     native, connect = linked_native(settings)
     before = connect.call_count
-    with pytest.raises(TestDatabaseSafetyError, match="reserved before writing"):
+    with pytest.raises(TestDatabaseSafetyError, match="exact tracked"):
         native.reserve_maintenance_completion(30, 12, 8, 42)
     assert connect.call_count == before
     native._schedule_reservations.add((8, 42, "synthetic-schedule"))
+    with pytest.raises(TestDatabaseSafetyError, match="exact tracked"):
+        native.reserve_maintenance_completion(30, 12, 8, 42)
+    assert connect.call_count == before
+    native.remember_maintenance_schedule(30, 8, 42, "synthetic-schedule")
     foreign = connection_with((TEST_DATABASE,), None)
     connect.side_effect = [foreign]
     with pytest.raises(TestDatabaseSafetyError, match="ownership"):
         native.reserve_maintenance_completion(30, 12, 8, 42)
-    assert not native._completion_reservations and not native._schedules
+    assert not native._completion_reservations and native._schedules == {30: (8, 42)}
 
 
 def test_existing_completion_is_not_claimed(settings):
-    connection = connection_with((TEST_DATABASE,), ("synthetic-schedule",), (999,))
+    connection = connection_with((TEST_DATABASE,), (30,), (999,))
     native, _ = linked_native(settings, connection)
     native._schedule_reservations.add((8, 42, "synthetic-schedule"))
+    native.remember_maintenance_schedule(30, 8, 42, "synthetic-schedule")
     with pytest.raises(TestDatabaseSafetyError, match="collision"):
         native.reserve_maintenance_completion(30, 12, 8, 42)
     assert not native._completion_reservations and not native._completions
@@ -113,6 +115,7 @@ def seed_reservations(native):
     native._part_reservations.add((12, 8, 42, "synthetic-part"))
     native.remember_part_snapshot(20, 12, 8, 42, "synthetic-part")
     native._schedule_reservations.add((8, 42, "synthetic-schedule"))
+    native.remember_maintenance_schedule(30, 8, 42, "synthetic-schedule")
     native._completion_reservations.add((30, 12, 8, 42))
 
 
@@ -137,7 +140,7 @@ def test_exact_children_are_recovered_and_deleted_before_services_and_parents(se
     ]
     assert deletes[0][1] == (40, 30, 12, 8, 42)
     assert deletes[1][1] == (20, 12, 8, 42, "synthetic-part")
-    assert deletes[2][1] == (30, 8, 42, "synthetic-schedule")
+    assert deletes[2][1] == (30, 8, 42)
     assert writer is not reader
     assert reader.execute.call_args_list[0].args == ("SELECT current_database()",)
     assert native.cleanup_link_counts == (1, 1, 1) and native.cleanup_service_count == 1
@@ -148,11 +151,23 @@ def test_exact_children_are_recovered_and_deleted_before_services_and_parents(se
 def test_unknown_schedule_links_cannot_be_silently_cascaded(settings):
     native, _ = linked_native(settings)
     native._schedule_reservations.add((8, 42, "synthetic-schedule"))
+    native.remember_maintenance_schedule(30, 8, 42, "synthetic-schedule")
     connection = connection_with([(30,)], (30,), (True,))
     with pytest.raises(TestDatabaseSafetyError, match="no cascade permitted"):
         native._delete_linked_fixtures(connection)
     assert not any(call.args[0].startswith("DELETE") for call in connection.execute.call_args_list)
-    assert native._schedules == {30: (8, 42, "synthetic-schedule")}
+    assert native._schedules == {30: (8, 42)}
+
+
+def test_cleanup_never_claims_an_untracked_schedule_on_reserved_vehicle(settings):
+    native, _ = linked_native(settings)
+    native._schedule_reservations.add((8, 42, "synthetic-schedule"))
+    native.remember_maintenance_schedule(30, 8, 42, "synthetic-schedule")
+    connection = connection_with([(30,), (31,)])
+    with pytest.raises(TestDatabaseSafetyError, match="Unexpected schedule ID"):
+        native._delete_linked_fixtures(connection)
+    assert native._schedules == {30: (8, 42)}
+    assert all(call.args[0].startswith("SELECT") for call in connection.execute.call_args_list)
 
 
 @pytest.mark.parametrize("remaining", ["part", "schedule", "completion"])

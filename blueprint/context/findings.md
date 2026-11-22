@@ -24,3 +24,11 @@
 **Resolution:**
 
 Fresh gpt-6.1-sol review independently retains P2/open on November 20. A reviewer-run inline Node probe acknowledged one Add, failed its immediate list refresh, opened and canceled reload, then verified reloadPrompt false while message still equaled the reload question rather than the prior committed-write/failed-refresh feedback. refreshRequired remained true; request counts stayed one Add and two lists (initial plus failed refresh). No request occurred on cancel and write gating remained intact, so this is a nonblocking feedback-restoration issue rather than another uncertain-write or data-integrity failure.
+
+### F-09 [P2] open - Confirmed duplicate save omits a newly discovered match from the saved list
+
+**File:** frontend/src/scheduleState.js:84
+**Found:** 2026-11-21 by /audit independent current (quality, tests)
+**Why it matters:** A refreshed duplicate conflict can display a schedule added in another window. The store keeps matches only in the review state. On a successful confirmation, the success handler adds the new saved record to the older list and clears the review. An offline store probe confirmed that a review showing IDs 12 and 13 led to a success message and a saved list with IDs 12 and 15. ID 13 reappeared after manual reload. The database write and duplicate confirmation remain correct, but the screen hides a saved task it just asked the owner to review.
+**Suggested fix:** Reconcile the already validated matching schedules into the displayed list by ID when a conflict arrives. Add a saved-list assertion to the existing refreshed-conflict test.
+**Resolution:**
