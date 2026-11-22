@@ -85,6 +85,7 @@ def reserve_link(native, actor, vehicle, record, kind):
             "SELECT id, %s, %s, %s FROM public.vehicles WHERE id = %s AND user_id = %s RETURNING id",
             (name, 30, date(2020, 1, 1), vehicle.id, actor.user.id),
         ).fetchone()[0]
+        native.remember_maintenance_schedule(schedule_id, vehicle.id, actor.user.id, name)
     native.reserve_maintenance_completion(schedule_id, record.id, vehicle.id, actor.user.id)
     return schedule_id
 

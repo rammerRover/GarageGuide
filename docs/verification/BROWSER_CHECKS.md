@@ -1,5 +1,64 @@
 # Manual browser verification
 
+## Feature 7 Step 4: user-performed maintenance schedule checks
+
+On November 21, 2026, the user reported that every check they performed passed
+in both Vite development and production preview using Chrome 157.0.8103.79.
+The report gives an overall result for each mode. Individual checklist
+observations and simulated failures were unreported.
+
+The user reported this exact guarded cleanup message:
+
+> Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.
+
+Step 4 is complete and awaiting approval for Step 5. The walkthrough below
+is retained for repeatability.
+
+Use the prepared `garageguide_app_test` database and the guarded launcher.
+Stop any other backend on port 8000 before starting this one.
+
+~~~powershell
+$env:RUN_DB_TESTS = '1'
+backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py
+~~~
+
+Confirm it prints `Guarded manual backend: garageguide_app_test only.`.
+Register only the printed synthetic accounts, using your own test password.
+Use the established Vite development and production preview commands below
+and open `http://127.0.0.1:5173` and `http://127.0.0.1:4173`. Repeat the
+applicable checks in both modes while the guarded backend is running.
+
+1. Add a vehicle with current mileage `0` and blank operating hours. Open
+   **Maintenance schedules** from its profile. Verify the empty list and blank
+   baselines. Copy current mileage and confirm it fills `0.0`. Verify current
+   hours show **Not recorded**, the copy button is disabled, and the hours
+   baseline stays blank until you enter a historical reading.
+2. Create a task with a days interval and past date, a mileage interval and
+   the copied zero, and an hours interval and manually entered baseline.
+   First try saving with one baseline blank and verify focus and validation.
+   Complete the pair and verify the saved values and source notes. Edit the
+   task, clear both hours fields, and reload. Confirm the edit persists and
+   the vehicle profile still shows the original mileage, hours, and timestamp.
+3. Enter the same name with different case or surrounding spaces. Verify
+   **Save schedule** shows the matches without adding a row. Change the
+   draft and confirm the review clears. Repeat the conflict and use **Open
+   schedule** to load the matching task for editing. Separately repeat the
+   conflict and use **Save as separate task** to create a distinct entry.
+   To check a fresh conflict, leave a review open in one visible window,
+   then use a second signed-in window for the same fixture owner to confirm
+   another duplicate. Confirm from the first review and verify the updated
+   matches appear and a new explicit choice is required. Keep both windows
+   visible so returning to a hidden page does not reset its private draft.
+4. From a different synthetic account, open the first account's schedule URL
+   and verify it shows the same not-found state as an absent vehicle. On the
+   owned route, use the keyboard to edit, copy, and make a duplicate choice.
+   At 375 px, confirm labels, errors, and actions remain readable and usable
+   without horizontal scrolling.
+
+Stop the guarded backend with Ctrl+C. Report browser/version, date, modes,
+observations or skipped checks, and the exact cleanup line it prints.
+Treat any mocked response as simulation evidence.
+
 ## Feature 6 Step 4: user-performed browser verification complete
 
 ### F-05/F-06 focused repair recheck: user-performed checks complete

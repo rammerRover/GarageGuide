@@ -530,17 +530,27 @@ class NativeTestDatabase:
         self.cleanup_verified = False
         return name
 
+    def remember_maintenance_schedule(self, schedule_id, vehicle_id, user_id, name):
+        scope = (vehicle_id, user_id)
+        if (vehicle_id, user_id, name) not in self._schedule_reservations:
+            raise TestDatabaseSafetyError("Schedule must be reserved before writing")
+        if type(schedule_id) is not int or schedule_id <= 0 or self._schedules.get(schedule_id, scope) != scope:
+            raise TestDatabaseSafetyError("Schedule did not return a valid fixture ID")
+        self._schedules[schedule_id] = scope
+
+    def is_tracked_schedule(self, schedule_id, vehicle_id, user_id):
+        return self._schedules.get(schedule_id) == (vehicle_id, user_id)
+
     def reserve_maintenance_completion(self, schedule_id, service_id, vehicle_id, user_id):
         self._require_service_fixture(service_id, vehicle_id, user_id)
-        names = [name for parent, owner, name in self._schedule_reservations if (parent, owner) == (vehicle_id, user_id)]
-        if not names:
-            raise TestDatabaseSafetyError("Completion schedule must be reserved before writing")
+        if self._schedules.get(schedule_id) != (vehicle_id, user_id):
+            raise TestDatabaseSafetyError("Completion requires an exact tracked schedule ID")
         with self.connect(self.settings, read_only=True) as connection:
             schedule = connection.execute(
-                "SELECT m.name FROM public.maintenance_schedules AS m "
+                "SELECT m.id FROM public.maintenance_schedules AS m "
                 "JOIN public.vehicles AS v ON v.id = m.vehicle_id "
-                "WHERE m.id = %s AND m.vehicle_id = %s AND v.user_id = %s AND m.name = ANY(%s)",
-                (schedule_id, vehicle_id, user_id, names),
+                "WHERE m.id = %s AND m.vehicle_id = %s AND v.user_id = %s",
+                (schedule_id, vehicle_id, user_id),
             ).fetchone()
             if schedule is None:
                 raise TestDatabaseSafetyError("Completion schedule ownership could not be verified")
@@ -553,7 +563,6 @@ class NativeTestDatabase:
             ).fetchone()
         if existing is not None:
             raise TestDatabaseSafetyError("Synthetic completion collision; existing record was not claimed")
-        self._schedules[schedule_id] = (vehicle_id, user_id, schedule[0])
         self._completion_reservations.add((schedule_id, service_id, vehicle_id, user_id))
         self.cleanup_verified = False
 
@@ -569,15 +578,16 @@ class NativeTestDatabase:
             for (part_id,) in rows:
                 if self._parts.get(part_id) != (service_id, vehicle_id, user_id, name):
                     raise TestDatabaseSafetyError("Unexpected snapshot ID; name matches cannot establish fixture ownership")
-        for vehicle_id, user_id, name in self._schedule_reservations:
+        for vehicle_id, user_id in {(parent, owner) for parent, owner, _ in self._schedule_reservations}:
             rows = connection.execute(
                 "SELECT m.id FROM public.maintenance_schedules AS m "
                 "JOIN public.vehicles AS v ON v.id = m.vehicle_id "
-                "WHERE m.vehicle_id = %s AND v.user_id = %s AND m.name = %s",
-                (vehicle_id, user_id, name),
+                "WHERE m.vehicle_id = %s AND v.user_id = %s",
+                (vehicle_id, user_id),
             ).fetchall()
             for (schedule_id,) in rows:
-                self._schedules[schedule_id] = (vehicle_id, user_id, name)
+                if self._schedules.get(schedule_id) != (vehicle_id, user_id):
+                    raise TestDatabaseSafetyError("Unexpected schedule ID; name matches cannot establish fixture ownership")
         for reservation in self._completion_reservations:
             rows = connection.execute(
                 "SELECT c.id FROM public.maintenance_completions AS c "
@@ -606,11 +616,11 @@ class NativeTestDatabase:
                 "AND s.vehicle_id = %s AND v.id = s.vehicle_id AND v.user_id = %s AND p.name = %s",
                 (part_id, service_id, vehicle_id, user_id, name),
             )
-        for schedule_id, (vehicle_id, user_id, name) in self._schedules.items():
+        for schedule_id, (vehicle_id, user_id) in self._schedules.items():
             row = connection.execute(
                 "SELECT m.id FROM public.maintenance_schedules AS m JOIN public.vehicles AS v ON v.id = m.vehicle_id "
-                "WHERE m.id = %s AND m.vehicle_id = %s AND v.user_id = %s AND m.name = %s FOR UPDATE OF m",
-                (schedule_id, vehicle_id, user_id, name),
+                "WHERE m.id = %s AND m.vehicle_id = %s AND v.user_id = %s FOR UPDATE OF m",
+                (schedule_id, vehicle_id, user_id),
             ).fetchone()
             if row is None:
                 continue
@@ -622,8 +632,8 @@ class NativeTestDatabase:
                 raise TestDatabaseSafetyError("Synthetic schedule has unexpected completion links; no cascade permitted")
             connection.execute(
                 "DELETE FROM public.maintenance_schedules AS m USING public.vehicles AS v "
-                "WHERE m.id = %s AND m.vehicle_id = %s AND v.id = m.vehicle_id AND v.user_id = %s AND m.name = %s",
-                (schedule_id, vehicle_id, user_id, name),
+                "WHERE m.id = %s AND m.vehicle_id = %s AND v.id = m.vehicle_id AND v.user_id = %s",
+                (schedule_id, vehicle_id, user_id),
             )
 
     def _remaining_linked_fixtures(self, connection):
@@ -636,10 +646,8 @@ class NativeTestDatabase:
              list({row[3] for row in self._part_reservations})),
         ).fetchall()
         schedules = connection.execute(
-            "SELECT id FROM public.maintenance_schedules WHERE id = ANY(%s) "
-            "OR (vehicle_id = ANY(%s) AND name = ANY(%s))",
-            (list(self._schedules), list({row[0] for row in self._schedule_reservations}),
-             list({row[2] for row in self._schedule_reservations})),
+            "SELECT id FROM public.maintenance_schedules WHERE id = ANY(%s) OR vehicle_id = ANY(%s)",
+            (list(self._schedules), list({row[0] for row in self._schedule_reservations})),
         ).fetchall()
         completions = connection.execute(
             "SELECT id FROM public.maintenance_completions WHERE id = ANY(%s) OR "

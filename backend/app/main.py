@@ -4,6 +4,7 @@ from starlette.exceptions import HTTPException
 
 from app.routes.auth import router as auth_router
 from app.routes.health import router as health_router
+from app.routes.maintenance_schedules import router as maintenance_schedules_router
 from app.routes.services import router as services_router
 from app.routes.service_parts import router as service_parts_router
 from app.routes.vehicles import router as vehicles_router
@@ -16,6 +17,7 @@ def create_app() -> FastAPI:
     application.include_router(vehicles_router, prefix="/api")
     application.include_router(services_router, prefix="/api")
     application.include_router(service_parts_router, prefix="/api")
+    application.include_router(maintenance_schedules_router, prefix="/api")
 
     @application.middleware("http")
     async def private_vehicle_responses(request: Request, call_next):

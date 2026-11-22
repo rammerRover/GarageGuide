@@ -2,8 +2,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from app import database, security, service_queries, session_queries, user_queries, vehicle_queries
+from app import database, maintenance_schedule_queries, security, service_queries, session_queries, user_queries, vehicle_queries
 from app.config import AuthSettings, Settings, get_settings, TEST_DATABASE
+from app.maintenance_schedule_schemas import MaintenanceScheduleCreate, MaintenanceSchedulePatch
 from app.schemas import LoginRequest
 from app.service_schemas import ServiceCreate, ServicePatch, ServiceRemovalRequest
 from app.vehicle_schemas import VehicleCreate, VehiclePatch
@@ -66,6 +67,55 @@ def test_manual_backend_limits_accounts_and_restores_after_failure(guarded_setup
     native.cleanup.assert_called_once()
     assert database.connect_database is original_connect
     assert user_queries.create_user is original_create
+
+
+def test_manual_schedule_creation_captures_exact_id_before_response_preparation(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    schedule = MaintenanceScheduleCreate(name="New task", interval_days=30, baseline_date="2020-01-01")
+    native.reserve_maintenance_schedule.return_value = "synthetic-reservation"
+    native.require_reserved_vehicle.return_value = True
+    result = Mock(id=13)
+
+    def create(settings, *, actor, vehicle_id, schedule, prepare_response):
+        native.reserve_maintenance_schedule.assert_called_once_with(8, 7)
+        prepare_response(result)
+
+    def fail_after_capture(value):
+        assert value is result
+        native.remember_maintenance_schedule.assert_called_once_with(13, 8, 7, "synthetic-reservation")
+        raise RuntimeError("Synthetic prepare failure")
+
+    monkeypatch.setattr(maintenance_schedule_queries, "create_maintenance_schedule", create)
+    with manual.prepared_test_backend():
+        with pytest.raises(RuntimeError, match="Synthetic prepare failure"):
+            maintenance_schedule_queries.create_maintenance_schedule(
+                settings, actor=actor, vehicle_id=8, schedule=schedule, prepare_response=fail_after_capture,
+            )
+    native.cleanup.assert_called_once()
+
+
+def test_manual_schedule_update_requires_exact_fixture_id_and_parent(guarded_setup, monkeypatch):
+    settings, native, _, _ = guarded_setup
+    actor = Mock(user=Mock(id=7, email="reserved-0@example.com"))
+    update = Mock()
+    monkeypatch.setattr(maintenance_schedule_queries, "update_maintenance_schedule", update)
+    options = {"actor": actor, "vehicle_id": 8, "schedule_id": 13, "patch": MaintenanceSchedulePatch(source_notes="Edited")}
+    with manual.prepared_test_backend():
+        native.require_reserved_vehicle.return_value = False
+        with pytest.raises(vehicle_queries.VehicleNotFoundError):
+            maintenance_schedule_queries.update_maintenance_schedule(settings, **options)
+        native.is_tracked_schedule.assert_not_called()
+        native.require_reserved_vehicle.return_value = True
+        native.is_tracked_schedule.return_value = False
+        with pytest.raises(maintenance_schedule_queries.MaintenanceScheduleNotFoundError):
+            maintenance_schedule_queries.update_maintenance_schedule(settings, **options)
+        update.assert_not_called()
+        native.is_tracked_schedule.assert_called_once_with(13, 8, 7)
+        native.is_tracked_schedule.return_value = True
+        maintenance_schedule_queries.update_maintenance_schedule(settings, **options)
+        update.assert_called_once_with(settings, **options, prepare_response=None)
+    native.cleanup.assert_called_once()
 
 
 def test_manual_backend_cleanup_runs_when_setup_fails(guarded_setup):
@@ -342,6 +392,7 @@ def test_manual_link_fixture_setup_reserves_before_exact_owner_scoped_inserts(gu
     events = []
     native.reserve_part_snapshot.side_effect = lambda *args: (events.append("reserve-part"), "synthetic-part")[1]
     native.reserve_maintenance_schedule.side_effect = lambda *args: (events.append("reserve-schedule"), "synthetic-schedule")[1]
+    native.remember_maintenance_schedule.side_effect = lambda *args: events.append("remember-schedule")
     native.reserve_maintenance_completion.side_effect = lambda *args: events.append("reserve-completion")
     connection = Mock()
     connection.execute.side_effect = lambda sql, params: (events.append("insert"), Mock(fetchone=Mock(return_value=(11,))))[1]
@@ -351,12 +402,15 @@ def test_manual_link_fixture_setup_reserves_before_exact_owner_scoped_inserts(gu
     native.connect.return_value = context
     monkeypatch.setattr(service_queries, "create_service", Mock(side_effect=[Mock(id=9), Mock(id=10)]))
     manual.prepare_browser_service_links(native, settings, actor, 8)
-    assert events == ["reserve-part", "insert", "reserve-schedule", "insert", "reserve-completion", "insert"]
+    assert events == [
+        "reserve-part", "insert", "reserve-schedule", "insert", "remember-schedule", "reserve-completion", "insert",
+    ]
     for call in connection.execute.call_args_list:
         sql, params = call.args
         assert "user_id = %s" in sql and params[-2:] == (8, 7)
     native.reserve_part_snapshot.assert_called_once_with(9, 8, 7)
     native.remember_part_snapshot.assert_called_once_with(11, 9, 8, 7, "synthetic-part")
+    native.remember_maintenance_schedule.assert_called_once_with(11, 8, 7, "synthetic-schedule")
     native.reserve_maintenance_completion.assert_called_once_with(11, 10, 8, 7)
 
 

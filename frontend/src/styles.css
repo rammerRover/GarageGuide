@@ -92,6 +92,15 @@ footer { color: #4b5a67; font-size: 0.9rem; }
 .part-values dd { margin: 0.25rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .parts-list h3 { margin-top: 0; }
 .parts-list button { margin-top: 1rem; }
+.schedule-section-title, .schedule-form { margin-block: 1.5rem; }
+.schedule-list h3, .schedule-review h3 { margin-block: 0 0.75rem; }
+.schedule-values dd { white-space: pre-wrap; }
+.schedule-list button, .schedule-review li button { margin-top: 0.75rem; }
+.schedule-review li + li { margin-top: 1rem; }
+.schedule-review dd { margin-inline-start: 0; }
+.registration .schedule-pair { border: 1px solid #cbd4db; border-radius: 0.4rem; padding: 0.75rem; gap: 1rem; }
+.schedule-pair legend { font-weight: 650; padding-inline: 0.25rem; }
+.schedule-pair button { margin-top: 0.5rem; }
 .field-hint { color: #40536a; font-size: 0.9rem; margin: 0; }
 .field-error { color: #a12323; margin: 0; }
 .vehicle-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem; }
