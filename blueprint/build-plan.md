@@ -35,7 +35,7 @@ Plan must not be introduced during these feature loops.
   mileage, and operating-hour intervals with matching baselines, source notes,
   validation, and duplicate-task review without inventing manufacturer
   recommendations.
-- [ ] 8. **Calculate maintenance status and in-app reminders.** Calculate
+- [x] 8. **Calculate maintenance status and in-app reminders.** Calculate
   upcoming, due, and overdue work from dates and available readings, use the
   first reached limit for combined schedules, and clearly identify missing or
   stale information.

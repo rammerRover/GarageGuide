@@ -32,3 +32,13 @@ Fresh gpt-6.1-sol review independently retains P2/open on November 20. A reviewe
 **Why it matters:** A refreshed duplicate conflict can display a schedule added in another window. The store keeps matches only in the review state. On a successful confirmation, the success handler adds the new saved record to the older list and clears the review. An offline store probe confirmed that a review showing IDs 12 and 13 led to a success message and a saved list with IDs 12 and 15. ID 13 reappeared after manual reload. The database write and duplicate confirmation remain correct, but the screen hides a saved task it just asked the owner to review.
 **Suggested fix:** Reconcile the already validated matching schedules into the displayed list by ID when a conflict arrives. Add a saved-list assertion to the existing refreshed-conflict test.
 **Resolution:**
+
+Feature 8 review rechecked this path. Automatic status refresh reconciles the saved list when it succeeds. An offline store probe confirmed that a failed automatic GET still leaves IDs 12 and 15 visible after a reviewed conflict showed 12 and 13. A deliberate GET restores 13. Retained P2/open for the failed-refresh path.
+
+### F-10 [P2] open - An uncertain schedule edit leaves the old maintenance reminder visible
+
+**File:** frontend/src/scheduleState.js:94
+**Found:** 2026-11-25 by /audit independent current (quality, tests)
+**Why it matters:** The uncertain-save branch keeps the previous status snapshot, and the page renders its reminders and per-limit results while prompting the owner to inspect the saved schedules. An offline probe used the real frontend request helper and session and schedule stores. It started with a Due task, simulated a PATCH that persisted a longer interval and returned HTTP 500, and observed that Due remained visible in the store snapshot. The next deliberate GET returned Upcoming. The stale reminder can show an obsolete due target while the owner is resolving the write outcome. The existing inspection and resubmission guard still works.
+**Suggested fix:** Invalidate the affected status in the uncertain-save branch and keep the prior saved values and draft for inspection. Extend the uncertain-save test to assert that affected status is absent until a successful GET.
+**Resolution:**
