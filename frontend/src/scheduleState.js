@@ -1,13 +1,14 @@
 import {
-  createMaintenanceSchedule, getVehicle, listMaintenanceSchedules, uncertainScheduleSave, updateMaintenanceSchedule,
+  createMaintenanceSchedule, getMaintenanceStatus, uncertainScheduleSave, updateMaintenanceSchedule,
 } from './api.js'
 import { parseSessionDeadline } from './sessionDeadline.js'
 import { prepareScheduleInput, scheduleDraft, scheduleFields } from './scheduleValidation.js'
 import { isVehicleId, vehicleIdMessage } from './vehicleValidation.js'
 
-const defaultApi = { getVehicle, listMaintenanceSchedules, createMaintenanceSchedule, updateMaintenanceSchedule }
+const defaultApi = { getMaintenanceStatus, createMaintenanceSchedule, updateMaintenanceSchedule }
 const empty = (vehicleId = null) => ({
   vehicleId, vehicle: null, schedules: [], saved: null, draft: scheduleDraft(),
+  statusSnapshot: null, saveConfirmation: '', refreshFailed: false,
   status: 'idle', pending: false, review: null, uncertain: false, inspected: false,
   message: '', errors: {}, focusVersion: 0,
 })
@@ -50,19 +51,13 @@ export function createScheduleStore(session, api = defaultApi, now = Date.now) {
     const current = () => !disposed && !departed && active === controller && !controller.signal.aborted && sameContext(started, context())
     const loading = operation === 'load'
     active = controller
-    publish({ pending: true, status: loading ? 'loading' : 'saving', message: '', errors: {}, review: null })
+    publish({ pending: true, status: loading ? 'loading' : 'saving', message: '', errors: {}, review: null,
+      ...(loading ? { statusSnapshot: null, refreshFailed: false } : { saveConfirmation: '' }) })
     const result = await session.authenticatedRequest(async (signal) => {
-      let reply
-      if (loading) {
-        const profile = await api.getVehicle(vehicleId, signal)
-        if (signal.aborted || !current()) return { kind: 'cancelled' }
-        if (profile.kind !== 'success') return profile
-        reply = { ...await api.listMaintenanceSchedules(vehicleId, signal), vehicle: profile.vehicle }
-      } else {
-        reply = scheduleId === null
+      const reply = loading ? await api.getMaintenanceStatus(vehicleId, signal)
+        : scheduleId === null
           ? await api.createMaintenanceSchedule(vehicleId, details, signal)
           : await api.updateMaintenanceSchedule(vehicleId, scheduleId, details, signal)
-      }
       if (signal.aborted || !current()) return { kind: 'cancelled' }
       if (reply.kind !== 'success') return reply
       const deadline = parseSessionDeadline(reply.deadline)
@@ -74,24 +69,32 @@ export function createScheduleStore(session, api = defaultApi, now = Date.now) {
     active = null
 
     if (result.kind === 'success' && loading) {
-      const saved = state.saved && (result.schedules.find((item) => item.id === state.saved.id) ?? null)
+      const snapshot = result.snapshot
+      const schedules = snapshot.schedules.map((entry) => entry.schedule)
+      const saved = state.saved && (schedules.find((item) => item.id === state.saved.id) ?? null)
       const missing = state.saved && !saved
-      feedback({ status: 'ready', vehicle: result.vehicle, schedules: result.schedules, saved, inspected: state.uncertain,
+      feedback({ status: 'ready', vehicle: snapshot.vehicle, schedules, saved,
+        statusSnapshot: snapshot, inspected: state.uncertain,
         draft: missing ? scheduleDraft() : state.draft,
         message: missing ? 'The schedule you were editing is no longer available.' : state.uncertain
-          ? 'Schedules reloaded. Compare the saved values with your draft.' : 'Schedules loaded.' })
+          ? 'Schedules reloaded. Compare the saved values with your draft.'
+          : state.saveConfirmation ? '' : 'Schedules loaded.' })
     } else if (result.kind === 'success') {
       const byId = new Map(state.schedules.map((item) => [item.id, item]))
       byId.set(result.schedule.id, result.schedule)
-      feedback({ status: 'ready', schedules: [...byId.values()].sort((a, b) => a.id - b.id),
-        saved: null, draft: scheduleDraft(), message: scheduleId === null ? 'Schedule created.' : 'Schedule saved.' })
+      publish({ status: 'ready', statusSnapshot: null, schedules: [...byId.values()].sort((a, b) => a.id - b.id),
+        saved: null, draft: scheduleDraft(), saveConfirmation: scheduleId === null ? 'Schedule created.' : 'Schedule saved.' })
+      if (ready() && state.vehicleId === vehicleId && sameContext(started, bound)) await run('load')
     } else if (result.kind === 'duplicate') {
       feedback({ status: 'duplicate', review: result.matches, message: result.matches.length
         ? 'Review the current matches before saving.' : 'No matching schedules remain. Review your draft and choose Save schedule again.' })
     } else if (result.kind === 'not-found') {
-      feedback({ ...empty(vehicleId), focusVersion: state.focusVersion + 1, status: 'not-found', message: result.message })
+      feedback({ ...empty(vehicleId), focusVersion: state.focusVersion + 1, status: 'not-found', message: result.message,
+        saveConfirmation: state.saveConfirmation, refreshFailed: Boolean(loading && state.saveConfirmation) })
     } else if (!loading && ['uncertain', 'network', 'unexpected', 'cancelled', 'unavailable'].includes(result.kind)) {
       feedback({ status: 'uncertain', uncertain: true, inspected: false, message: uncertainScheduleSave })
+    } else if (loading && state.saveConfirmation) {
+      feedback({ status: result.kind, refreshFailed: true, message: 'Maintenance status could not be refreshed.' })
     } else {
       feedback({ status: result.kind, errors: result.errors ?? {}, message: result.message ?? 'Please try again.' })
     }
@@ -101,7 +104,7 @@ export function createScheduleStore(session, api = defaultApi, now = Date.now) {
   function change(field, value) {
     if (!ready() || !state.vehicle || !scheduleFields.includes(field) || state.draft[field] === value) return false
     publish({ draft: { ...state.draft, [field]: value }, review: null, errors: {},
-      ...(state.uncertain ? {} : { message: '', status: 'ready' }) })
+      ...(state.uncertain || state.refreshFailed ? {} : { message: '', status: 'ready', saveConfirmation: '' }) })
     return true
   }
 
@@ -129,6 +132,7 @@ export function createScheduleStore(session, api = defaultApi, now = Date.now) {
     reload() {
       if (ready()) {
         if (state.uncertain) publish({ inspected: false })
+        if (!state.refreshFailed) publish({ saveConfirmation: '' })
         return run('load')
       }
     },
@@ -142,12 +146,14 @@ export function createScheduleStore(session, api = defaultApi, now = Date.now) {
       if (!ready() || state.uncertain) return false
       const saved = state.review?.find((item) => item.id === id) ?? state.schedules.find((item) => item.id === id)
       if (!saved) return false
-      publish({ saved, draft: scheduleDraft(saved), review: null, errors: {}, message: '', status: 'ready' })
+      publish({ saved, draft: scheduleDraft(saved), review: null, errors: {},
+        ...(state.refreshFailed ? {} : { message: '', status: 'ready', saveConfirmation: '' }) })
       return true
     },
     clearDraft() {
       if (!ready() || state.uncertain) return false
-      publish({ saved: null, draft: scheduleDraft(), review: null, errors: {}, message: '', status: 'ready' })
+      publish({ saved: null, draft: scheduleDraft(), review: null, errors: {},
+        ...(state.refreshFailed ? {} : { message: '', status: 'ready', saveConfirmation: '' }) })
       return true
     },
     submit: () => submit(),

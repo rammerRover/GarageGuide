@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { describeMaintenanceLimit, maintenanceReminders, maintenanceTriggers, readingTimestampWarnings, statusLabels } from './maintenanceStatus.js'
 import { createScheduleStore } from './scheduleState.js'
 import { scheduleFields, schedulePairs } from './scheduleValidation.js'
 import { useSession } from './useSession.js'
@@ -31,6 +32,54 @@ function ScheduleValues({ schedule }) {
       <div key={field}><dt>{labels[field]}</dt><dd>{schedule[field] ?? 'Not set'}</dd></div>)}
     {schedule.source_notes !== null && <div><dt>Source notes</dt><dd>{schedule.source_notes}</dd></div>}
   </dl>
+}
+
+function ScheduleStatus({ entry, vehicle }) {
+  const triggers = maintenanceTriggers(entry.limits)
+  return <div className="schedule-status">
+    <p><strong>{statusLabels[entry.status]}</strong></p>
+    {triggers.length > 0 && <p>Triggered by {triggers.join(', ')}.</p>}
+    <ul>
+      {entry.limits.map((limit) => {
+        const { label, status, target, remaining, savedReading, issue } = describeMaintenanceLimit(limit, entry.schedule, vehicle)
+        return <li key={limit.kind}>
+          <h4>{label}</h4>
+          <p>{status}</p>
+          <dl>
+            <div><dt>Due target</dt><dd>{target}</dd></div>
+            <div><dt>Remaining</dt><dd>{remaining}</dd></div>
+            {savedReading && <div><dt>Last saved {label.toLowerCase()}</dt><dd>{savedReading}</dd></div>}
+          </dl>
+          {issue && <p className="field-hint">{issue}</p>}
+        </li>
+      })}
+    </ul>
+  </div>
+}
+
+function StatusSummary({ snapshot }) {
+  const reminders = maintenanceReminders(snapshot.schedules)
+  const hasReadingLimits = snapshot.schedules.some((entry) => entry.limits.some((limit) => limit.kind !== 'days'))
+  const changedAt = snapshot.vehicle.readings_updated_at
+  return <>
+    {snapshot.schedules.length > 0 &&
+      <p>Status as of <time dateTime={snapshot.as_of_date}>{snapshot.as_of_date}</time></p>}
+    {hasReadingLimits && <div className="schedule-reading-advisory">
+      <p><strong>Readings last changed</strong> {changedAt ?
+        <time dateTime={changedAt}>{new Date(changedAt).toLocaleString()}</time> : 'Unrecorded'}</p>
+      {snapshot.readings_timestamp_warning && <p>{readingTimestampWarnings[snapshot.readings_timestamp_warning]}</p>}
+    </div>}
+    {reminders.length > 0 && <section className="schedule-reminders" aria-labelledby="schedule-reminders-title">
+      <h2 id="schedule-reminders-title">Maintenance reminders</h2>
+      <ul>
+        {reminders.map(({ schedule, status }) => <li key={schedule.id}>
+          <button type="button" className="schedule-reminder-link"
+            onClick={() => document.getElementById(`schedule-heading-${schedule.id}`)?.focus()}>{schedule.name}</button>
+          <span>{statusLabels[status]}</span>
+        </li>)}
+      </ul>
+    </section>}
+  </>
 }
 
 function ScheduleField({ field, state, store, inputs }) {
@@ -78,6 +127,10 @@ function ScheduleView({ store, vehicleId }) {
     if (store.beginEdit(id)) requestAnimationFrame(() => inputs.current.name?.focus())
   }
 
+  const statusById = new Map(state.statusSnapshot?.schedules.map((entry) => [entry.schedule.id, entry]))
+  const pendingMessage = state.status === 'saving' ? 'Saving schedule.' :
+    state.saveConfirmation ? 'Refreshing maintenance status.' : 'Loading schedules.'
+
   return <section aria-labelledby="schedule-page-title">
     <div className="intro">
       <h1 id="schedule-page-title" ref={heading} tabIndex={-1}>Maintenance schedules</h1>
@@ -85,14 +138,16 @@ function ScheduleView({ store, vehicleId }) {
       {state.vehicle && <p>{state.vehicle.year} {state.vehicle.make} {state.vehicle.model}</p>}
     </div>
     <p className="form-status" ref={feedback} tabIndex={-1} role="status" aria-atomic="true">
-      {state.pending ? state.status === 'saving' ? 'Saving schedule.' : 'Loading schedules.' : state.message}
+      {[state.saveConfirmation, state.pending ? pendingMessage : state.message].filter(Boolean).join(' ')}
     </p>
     {state.vehicle && <>
+      {state.statusSnapshot && <StatusSummary snapshot={state.statusSnapshot} />}
       <h2 className="schedule-section-title">Saved schedules</h2>
       {state.schedules.length === 0 ? <p>No maintenance schedules yet.</p> :
         <ul className="vehicle-list schedule-list">{state.schedules.map((schedule) =>
           <li key={schedule.id} className="vehicle-card">
-            <h3>{schedule.name}</h3>
+            <h3 id={`schedule-heading-${schedule.id}`} tabIndex={-1}>{schedule.name}</h3>
+            {statusById.has(schedule.id) && <ScheduleStatus entry={statusById.get(schedule.id)} vehicle={state.vehicle} />}
             <ScheduleValues schedule={schedule} />
             <button type="button" disabled={state.pending || state.uncertain}
               aria-label={`Edit ${schedule.name}, task ${schedule.id}`} onClick={() => startEdit(schedule.id)}>Edit</button>
@@ -111,7 +166,7 @@ function ScheduleView({ store, vehicleId }) {
               <ScheduleField field={interval} state={state} store={store} inputs={inputs} />
               <ScheduleField field={baseline} state={state} store={store} inputs={inputs} />
               {index > 0 && <div>
-                <p className="field-hint">{index === 1 ? 'Current mileage' : 'Current operating hours'}: {current ?? 'Not recorded'}</p>
+                <p className="field-hint">{index === 1 ? 'Last saved mileage' : 'Last saved operating hours'}: {current ?? 'Not recorded'}</p>
                 <button type="button" disabled={current === null}
                   onClick={() => { store.copyReading(baseline); inputs.current[baseline]?.focus() }}>
                   {index === 1 ? 'Copy current mileage' : 'Copy current hours'}
@@ -143,7 +198,9 @@ function ScheduleView({ store, vehicleId }) {
     </>}
     {!state.pending && !['idle', 'invalid-address'].includes(state.status) &&
       <div className="profile-actions">
-        <button type="button" onClick={() => { void store.reload() }}>{state.vehicle ? 'Reload saved schedules' : 'Try again'}</button>
+        <button type="button" onClick={() => { void store.reload() }}>
+          {state.refreshFailed ? 'Retry status refresh' : state.vehicle ? 'Reload saved schedules' : 'Try again'}
+        </button>
         {state.uncertain && state.inspected && <button type="button" onClick={() => store.acknowledgeInspection()}>
           I reviewed the saved schedules
         </button>}

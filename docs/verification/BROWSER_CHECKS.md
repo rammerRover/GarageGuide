@@ -1,5 +1,60 @@
 # Manual browser verification
 
+## Feature 8 Step 3 maintenance status walkthrough
+
+On November 24, 2026, the user reported that all Feature 8 browser checks
+passed in both Vite development and production preview using Chrome
+157.0.8103.79. The user approved Step 3.
+
+The user blocked the status GET in DevTools to simulate a failed refresh
+and observed that retry sent only a GET.
+
+The user reported this exact guarded cleanup message:
+
+> Verified cleanup: all reserved synthetic accounts, sessions, vehicles, services, part snapshots, maintenance completions, and schedules are absent.
+
+The walkthrough below is retained for repeatability.
+
+Run the existing guarded backend from the repository root with other backends
+off port 8000. Confirm it serves `garageguide_app_test` and use only its
+reserved synthetic accounts.
+
+~~~powershell
+$env:RUN_DB_TESTS = '1'
+backend/.venv/Scripts/python.exe backend/tests/manual_registration_server.py
+~~~
+
+Run the same walkthrough in Vite development on `http://127.0.0.1:5173`
+and production preview on `http://127.0.0.1:4173`. Use the project's
+`npm --prefix frontend run dev` or build and preview commands.
+
+1. Create a synthetic vehicle with mileage and hours blank. Open **Maintenance
+   schedules** and check the empty state. Create a task with a one-day
+   interval starting yesterday, a 200-mile interval starting at 0, and
+   a five-hour interval starting at 0. Confirm the saved task is **Due**
+   for Calendar, shows today's target and zero days remaining, and explains
+   both missing readings. **Readings last changed** should show an advisory
+   warning. The Network panel should show a status GET after the confirmed save.
+2. Save mileage of 250 on the vehicle profile and return to schedules. Expect
+   **Overdue** from the last saved mileage, an exact target of `200.0 mi` and
+   remaining `-50.0 mi`. Calendar is still a trigger and hours are still
+   unknown. Add a calendar-only Due task and an hours-only Needs information
+   task to check reminder order. Tab to a reminder and activate it to focus
+   its matching task. Repeat at 375 px and check labels, wrapping, and focus.
+   A different reserved account opening the same URL gets the vehicle
+   not-found state.
+3. Simulate a failed refresh with DevTools request blocking for
+   `*/maintenance-schedules/status` after the page has loaded. Edit the
+   combined task to a 300-mile interval and save. Confirm **Schedule saved**
+   remains visible while status is unavailable. Unblock the request and
+   choose **Retry status refresh**. Verify the updated target of `300.0 mi`
+   and `50.0 mi` remaining with Calendar still Due. Only a status GET
+   should follow the retry.
+
+Stop the guarded backend with Ctrl+C. Record the browser and version, date,
+both modes, observed cases and the exact cleanup line. Report the blocked
+request as a browser simulation.
+
 ## Feature 7 Step 4: user-performed maintenance schedule checks
 
 On November 21, 2026, the user reported that every check they performed passed

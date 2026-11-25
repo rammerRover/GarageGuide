@@ -1,4 +1,5 @@
 import { parseSessionDeadline } from './sessionDeadline.js'
+import { isMaintenanceStatusSnapshot } from './maintenanceStatus.js'
 import {
   duplicateScheduleMessage, exactScheduleShape, isOwnedScheduleList, isPublicSchedule,
   parseScheduleConflict, parseScheduleErrors, scheduleIdMessage,
@@ -578,11 +579,14 @@ const scheduleFailure = (mutation) => mutation
   ? { kind: 'uncertain', message: uncertainScheduleSave }
   : { kind: 'unexpected', message: "We couldn't load the maintenance schedules. Please try again." }
 
-function scheduleResult(method, response, data, vehicleId, scheduleId) {
+function scheduleResult(method, response, data, vehicleId, scheduleId, statusSnapshot) {
   const mutation = method !== 'GET'
   const failure = scheduleFailure(mutation)
   if (response.status === (method === 'POST' ? 201 : 200)) {
     const deadline = parseSessionDeadline(response.headers.get('X-GarageGuide-Session-Expires-At'))
+    if (statusSnapshot) {
+      return isMaintenanceStatusSnapshot(data, vehicleId) ? { kind: 'success', snapshot: data, deadline } : failure
+    }
     if (!mutation) {
       return exactScheduleShape(data, ['vehicle_id', 'schedules']) && Number.isInteger(data.vehicle_id) &&
         String(data.vehicle_id) === vehicleId && isOwnedScheduleList(data.schedules, vehicleId)
@@ -614,7 +618,7 @@ function scheduleResult(method, response, data, vehicleId, scheduleId) {
   return failure
 }
 
-async function scheduleRequest(method, vehicleId, scheduleId, details, signal) {
+async function scheduleRequest(method, vehicleId, scheduleId, details, signal, statusSnapshot = false) {
   if (!isVehicleId(vehicleId) || (method === 'PATCH' && !isVehicleId(scheduleId))) return {
     kind: 'invalid', message: !isVehicleId(vehicleId) ? vehicleIdMessage : scheduleIdMessage,
   }
@@ -626,7 +630,8 @@ async function scheduleRequest(method, vehicleId, scheduleId, details, signal) {
   const mutation = method !== 'GET'
   try {
     const path = `/api/vehicles/${vehicleId}/maintenance-schedules`
-    const response = await fetch(method === 'PATCH' ? `${path}/${scheduleId}` : path, {
+    const url = statusSnapshot ? `${path}/status` : method === 'PATCH' ? `${path}/${scheduleId}` : path
+    const response = await fetch(url, {
       method, credentials: 'same-origin', signal: controller.signal,
       headers: mutation ? { Accept: 'application/json', 'Content-Type': 'application/json', 'X-GarageGuide-CSRF': '1' } :
         { Accept: 'application/json' },
@@ -634,7 +639,7 @@ async function scheduleRequest(method, vehicleId, scheduleId, details, signal) {
     })
     const data = await response.json()
     controller.signal.throwIfAborted()
-    return scheduleResult(method, response, data, vehicleId, scheduleId)
+    return scheduleResult(method, response, data, vehicleId, scheduleId, statusSnapshot)
   } catch {
     return signal?.aborted ? { kind: 'cancelled' } : scheduleFailure(mutation)
   } finally {
@@ -644,5 +649,6 @@ async function scheduleRequest(method, vehicleId, scheduleId, details, signal) {
 }
 
 export const listMaintenanceSchedules = (vehicleId, signal) => scheduleRequest('GET', vehicleId, null, undefined, signal)
+export const getMaintenanceStatus = (vehicleId, signal) => scheduleRequest('GET', vehicleId, null, undefined, signal, true)
 export const createMaintenanceSchedule = (vehicleId, details, signal) => scheduleRequest('POST', vehicleId, null, details, signal)
 export const updateMaintenanceSchedule = (vehicleId, scheduleId, details, signal) => scheduleRequest('PATCH', vehicleId, scheduleId, details, signal)
