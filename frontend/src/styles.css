@@ -101,6 +101,16 @@ footer { color: #4b5a67; font-size: 0.9rem; }
 .registration .schedule-pair { border: 1px solid #cbd4db; border-radius: 0.4rem; padding: 0.75rem; gap: 1rem; }
 .schedule-pair legend { font-weight: 650; padding-inline: 0.25rem; }
 .schedule-pair button { margin-top: 0.5rem; }
+.schedule-status { margin-block: 1rem; }
+.schedule-status p, .schedule-status h4 { margin-block: 0.25rem; }
+.schedule-status ul { padding-inline-start: 1rem; }
+.schedule-status li { margin-block: 0.75rem; }
+.schedule-status dl { margin-block: 0.5rem; gap: 0.25rem; }
+.schedule-reading-advisory, .schedule-reminders { margin-block: 1rem; }
+.schedule-reminders ul { padding: 0; list-style: none; }
+.schedule-reminders li { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.75rem; }
+.schedule-reminder-link { padding-inline: 0.15rem; color: #234f75; background: transparent; border-color: transparent; text-align: start; text-decoration: underline; }
+.schedule-reminder-link:hover:enabled { background: #edf2f6; }
 .field-hint { color: #40536a; font-size: 0.9rem; margin: 0; }
 .field-error { color: #a12323; margin: 0; }
 .vehicle-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem; }

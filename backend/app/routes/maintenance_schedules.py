@@ -15,6 +15,7 @@ from app.maintenance_schedule_schemas import (
     SCHEDULE_ID_ERROR, MaintenanceSchedule, MaintenanceScheduleCreate,
     MaintenanceScheduleListResponse, MaintenanceSchedulePatch, ScheduleId,
 )
+from app.maintenance_status import MaintenanceStatusResponse
 from app.session_queries import AuthenticatedSession
 from app.vehicle_queries import VehicleNotFoundError
 from app.vehicle_schemas import READING_ERROR, TEXT_ERROR, VEHICLE_ID_ERROR, VehicleId
@@ -148,6 +149,15 @@ def list_owned_schedules(
     settings: Settings = Depends(get_settings),
 ) -> Response:
     return _respond(queries.list_maintenance_schedules, settings, actor, vehicle_id)
+
+
+@router.get("/status", response_model=MaintenanceStatusResponse)
+def get_owned_schedule_status(
+    vehicle_id: VehicleId,
+    actor: AuthenticatedSession = Depends(authentication.require_authenticated_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    return _respond(queries.get_maintenance_status, settings, actor, vehicle_id)
 
 
 @router.post("", status_code=201, response_model=MaintenanceSchedule)

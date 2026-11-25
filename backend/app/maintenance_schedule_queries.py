@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import psycopg
 
@@ -9,13 +10,18 @@ from app.maintenance_schedule_schemas import (
     MaintenanceSchedule, MaintenanceScheduleCreate, MaintenanceScheduleListResponse,
     MaintenanceSchedulePatch,
 )
+from app.maintenance_status import MaintenanceStatusResponse, calculate_maintenance_status
+from app.service_schemas import get_current_date
 from app.session_queries import AuthenticatedSession
+from app.vehicle_queries import PUBLIC_FIELDS as VEHICLE_FIELDS
 from app.vehicle_queries import VehicleNotFoundError
+from app.vehicle_schemas import Vehicle
 
 
 PUBLIC_FIELDS = ("id", "vehicle_id", *EDITABLE_FIELDS, "created_at")
 _COLUMNS = ", ".join(PUBLIC_FIELDS)
 _SCOPED_COLUMNS = ", ".join(f"m.{field}" for field in PUBLIC_FIELDS)
+_VEHICLE_COLUMNS = ", ".join(f"v.{field}" for field in VEHICLE_FIELDS)
 _WRITE_COLUMNS = ", ".join(EDITABLE_FIELDS)
 _WRITE_VALUES = ", ".join("%s" for _ in EDITABLE_FIELDS)
 _ASSIGNMENTS = ", ".join(f"{field} = %s" for field in EDITABLE_FIELDS)
@@ -88,6 +94,36 @@ def list_maintenance_schedules(
             _require_owned_vehicle(connection, vehicle_id, owner_id)
             result = MaintenanceScheduleListResponse(
                 vehicle_id=vehicle_id, schedules=_owned_schedules(connection, vehicle_id, owner_id),
+            )
+            _prepare(result, prepare_response)
+    except _DATABASE_FAILURES:
+        raise MaintenanceScheduleUnavailableError() from None
+    return result
+
+
+def _current_instant() -> datetime:
+    return datetime.now(UTC)
+
+
+def get_maintenance_status(
+    settings: Settings, *, actor: AuthenticatedSession, vehicle_id: int,
+    prepare_response: Callable[[MaintenanceStatusResponse], None] | None = None,
+) -> MaintenanceStatusResponse:
+    try:
+        with database.connect_database(settings, read_only=True) as connection:
+            rows = connection.execute(
+                f"SELECT {_VEHICLE_COLUMNS}, {_SCOPED_COLUMNS} FROM public.vehicles AS v "
+                "LEFT JOIN public.maintenance_schedules AS m ON m.vehicle_id = v.id "
+                "WHERE v.id = %s AND v.user_id = %s ORDER BY m.id",
+                (vehicle_id, actor.user.id),
+            ).fetchall()
+            if not rows:
+                raise VehicleNotFoundError()
+            vehicle_width = len(VEHICLE_FIELDS)
+            vehicle = Vehicle.model_validate(dict(zip(VEHICLE_FIELDS, rows[0][:vehicle_width], strict=True)))
+            schedules = [_public_schedule(row[vehicle_width:]) for row in rows if row[vehicle_width] is not None]
+            result = calculate_maintenance_status(
+                vehicle, schedules, as_of_date=get_current_date(), now=_current_instant(),
             )
             _prepare(result, prepare_response)
     except _DATABASE_FAILURES:
